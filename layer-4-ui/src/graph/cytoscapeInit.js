@@ -34,6 +34,18 @@ const NODE_COLOR = {
     external:       { light: '#964219', dark: '#bb653b' },
 };
 
+// Node dimensions — must match stylesheet width/height
+const NODE_W = 120;
+const NODE_H = 44;
+// Icon badge size and margin
+const ICON_SIZE   = 16;
+const ICON_MARGIN = 4;
+// Absolute pixel positions for top-right badge
+// Cytoscape background-position is relative to (node_width - icon_width)
+// so right-edge offset = NODE_W - ICON_SIZE - ICON_MARGIN
+const ICON_POS_X = NODE_W - ICON_SIZE - ICON_MARGIN;  // 100
+const ICON_POS_Y = ICON_MARGIN;                        // 4
+
 function nodeShape(node) {
     if (node.nodeType === 'service') return 'roundrectangle';
     const dbSet = new Set(['postgres','postgresql','mysql','mongodb','elasticsearch']);
@@ -49,7 +61,6 @@ function buildNodeElement(node, isDark) {
         ? NODE_COLOR[node.nodeType]?.dark   ?? NODE_COLOR.service.dark
         : NODE_COLOR[node.nodeType]?.light  ?? NODE_COLOR.service.light;
     const slug    = getIconSlug(node);
-    // Цвет иконки подбираем под тему: в тёмной — белый, в светлой — цвет узла
     const iconColor = isDark ? 'ffffff' : color.replace('#', '');
     const iconUrl = slug ? `${SIMPLE_ICONS_CDN}/${slug}/${iconColor}` : '';
     return {
@@ -69,15 +80,10 @@ export function edgeKey(edge) {
     return `${edge.from}->${edge.to}::${edge.method ?? ''}:${edge.path ?? ''}`;
 }
 
-/** Ключ группы: пара source→target без метода/пути */
 function edgeGroupKey(edge) {
     return `${edge.from ?? edge.source}->${edge.to ?? edge.target}`;
 }
 
-/**
- * Группируем рёбра: несколько рёбер между одной парой узлов
- * сворачиваем в одно с badge-счётчиком.
- */
 function groupEdges(edges) {
     const groups = new Map();
     for (const e of edges) {
@@ -136,36 +142,35 @@ function buildStylesheet(isDark) {
                 'font-size':          11,
                 'font-family':        'Inter',
                 'font-weight':        '500',
-                'width':              120,
-                'height':             44,
+                'width':              NODE_W,
+                'height':             NODE_H,
                 'padding':            '10px',
-                // без иконки по умолчанию
                 'background-image':            'none',
                 'background-width':            0,
                 'background-height':           0,
-                'background-position-x':       '100%',
-                'background-position-y':       '0%',
+                // FIX: plain numbers — Cytoscape does NOT support calc() in position props
+                'background-position-x':       0,
+                'background-position-y':       0,
                 'background-image-opacity':    0,
                 'transition-property':         'background-opacity border-width border-opacity color',
                 'transition-duration':         '200ms',
                 'transition-timing-function':  'ease-out',
             },
         },
-        // ---- узлы с иконкой: маленький бейдж в правом верхнем углу
+        // ---- nodes with icon: small 16×16 badge, top-right corner
         {
             selector: 'node[iconUrl != ""]',
             style: {
                 'background-image':         'data(iconUrl)',
-                // НЕ contain/cover — фиксированный размер 18×18px
                 'background-fit':           'none',
                 'background-clip':          'none',
                 'background-repeat':        'no-repeat',
-                'background-width':         18,
-                'background-height':        18,
-                // правый верхний угол, с отступом 5px
-                'background-position-x':    'calc(100% - 5px)',
-                'background-position-y':    '5px',
-                'background-image-opacity': 0.75,
+                'background-width':         ICON_SIZE,
+                'background-height':        ICON_SIZE,
+                // FIX: absolute pixel offsets — no calc(), no percentages with expressions
+                'background-position-x':    ICON_POS_X,
+                'background-position-y':    ICON_POS_Y,
+                'background-image-opacity': 0.80,
             },
         },
         { selector: 'node.hover',       style: { 'background-opacity': 0.30, 'border-width': 3 } },
@@ -205,7 +210,6 @@ function buildStylesheet(isDark) {
                 'transition-duration': '200ms',
             },
         },
-        // ---- толщина растёт с количеством маршрутов
         { selector: 'edge[count > 1]',   style: { 'width': 2.5 } },
         { selector: 'edge[count > 5]',   style: { 'width': 3   } },
         { selector: 'edge[count > 15]',  style: { 'width': 3.5 } },
@@ -283,7 +287,7 @@ export function highlightSelected(cy, nodeId) {
 
 // ================================================================ syncGraph
 export function syncGraph(cy, graph, isDark) {
-    if (!graph?.nodes) return; // guard: граф ещё не загружен
+    if (!graph?.nodes) return;
 
     const seenEdges = new Set();
     const uniqueEdges = graph.edges.filter(e => {
@@ -365,7 +369,6 @@ export function runLayout(cy, direction = 'TB') {
 
 export function updateTheme(cy, isDark) {
     cy.style(buildStylesheet(isDark));
-    // Перестраиваем узлы чтобы обновить iconUrl с правильным цветом
     if (cy.nodes().length > 0) {
         cy.nodes().forEach(n => {
             const slug = ICON_SLUG[n.id()] ?? ICON_SLUG[n.data('framework')] ?? null;
@@ -380,35 +383,20 @@ export function updateTheme(cy, isDark) {
 
 // ================================================================ init
 export function initCytoscape({ container, graph, isDark = true }) {
-    if (!graph?.nodes) {
-        // Пустой граф — просто создаём инстанс без элементов
-        const cy = cytoscape({
-            container,
-            elements:        [],
-            style:           buildStylesheet(isDark),
-            layout:          { name: 'preset' },
-            minZoom:         0.25,
-            maxZoom:         3,
-            autoungrabify:   false,
-            autounselectify: false,
-        });
-        attachEventHandlers(cy);
-        emit('cy:ready', cy);
-        return cy;
-    }
-
     const seenEdges = new Set();
-    const uniqueEdges = graph.edges.filter(e => {
+    const edges = (graph?.edges ?? []).filter(e => {
         const k = edgeKey(e);
         if (seenEdges.has(k)) return false;
         seenEdges.add(k);
         return true;
     });
 
-    const elements = [
-        ...graph.nodes.map(n => buildNodeElement(n, isDark)),
-        ...groupEdges(uniqueEdges),
-    ];
+    const elements = graph?.nodes?.length
+        ? [
+            ...graph.nodes.map(n => buildNodeElement(n, isDark)),
+            ...groupEdges(edges),
+          ]
+        : [];
 
     const cy = cytoscape({
         container,
@@ -421,7 +409,7 @@ export function initCytoscape({ container, graph, isDark = true }) {
         autounselectify: false,
     });
 
-    runLayout(cy);
+    if (elements.length) runLayout(cy);
     attachEventHandlers(cy);
     emit('cy:ready', cy);
     return cy;

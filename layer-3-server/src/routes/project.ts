@@ -10,74 +10,73 @@ interface StartBody {
 }
 
 export function registerProjectRoutes(app: FastifyInstance): void {
-  /**
-   * POST /server/start
-   * Body: { projectDir: string }
-   *
-   * Переключает projectDir, отвечает 200 сразу,
-   * затем запускает скан + watcher в фоне.
-   *
-   * ВАЖНО: reply.hijack() + async handler = setImmediate никогда не выполняется
-   * (Fastify бросает исключение внутри async-хэндлера после hijack, оно глотается).
-   * Решение: планируем setImmediate ДО return reply.send() — тогда callback
-   * уже зарегистрирован в event loop и выполнится после ответа.
-   */
   app.post<{ Body: StartBody }>('/server/start', {
     schema: {
       body: {
         type: 'object',
         required: ['projectDir'],
+        additionalProperties: true,
         properties: {
           projectDir: { type: 'string', minLength: 1 },
         },
       },
+      // FIX: явно описываем response чтобы Fastify не падал на сериализации
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            ok:         { type: 'boolean' },
+            projectDir: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            ok:    { type: 'boolean' },
+            error: { type: 'string' },
+          },
+        },
+      },
     },
   }, async (req, reply) => {
-    const rawDir = req.body.projectDir.trim()
-    const dir = resolve(rawDir)
+    try {
+      const rawDir = req.body.projectDir.trim()
+      const dir = resolve(rawDir)
 
-    if (!existsSync(dir)) {
-      return reply.status(400).send({
-        ok: false,
-        error: `Папка не найдена: ${dir}`,
-      })
-    }
+      if (!existsSync(dir)) {
+        return reply.status(400).send({ ok: false, error: `Папка не найдена: ${dir}` })
+      }
 
-    // Переключаем projectDir
-    setProjectDir(dir)
-    console.log(`[project] switched to: ${dir}`)
+      setProjectDir(dir)
+      console.log(`[project] switched to: ${dir}`)
 
-    // Регистрируем скан в event loop ДО того как Fastify отправит ответ.
-    // Это гарантирует что setImmediate callback выполнится после I/O ответа.
-    setImmediate(() => {
-      void (async () => {
-        try {
-          console.log('[project] setImmediate fired — starting scan...')
-          stopWatcher()
-          const { graph, diff } = await runScan()
-          if (diff) {
-            broadcastPatch(diff)
-          } else {
-            broadcastFull(graph)
+      // Планируем скан в event loop ДО отправки ответа
+      setImmediate(() => {
+        void (async () => {
+          try {
+            stopWatcher()
+            const { graph, diff } = await runScan()
+            if (diff) broadcastPatch(diff)
+            else      broadcastFull(graph)
+            startWatcher(dir)
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err)
+            console.error('[project] scan failed:', message)
           }
-          startWatcher(dir)
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err)
-          console.error('[project] scan after start failed:', message)
-        }
-      })()
-    })
+        })()
+      })
 
-    // Отвечаем после регистрации setImmediate — Fastify сам управляет ответом
-    return reply
-      .header('Content-Type', 'application/json')
-      .header('X-Project-Dir', dir)
-      .send({ ok: true, projectDir: dir })
+      // FIX: убираем ручной Content-Type — Fastify выставляет его сам при .send(object)
+      // Двойной .header('Content-Type') вызывал FST_ERR_REP_ALREADY_SENT → 500
+      return reply.send({ ok: true, projectDir: dir })
+
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[project] /server/start handler error:', message)
+      return reply.status(500).send({ ok: false, error: message })
+    }
   })
 
-  /**
-   * GET /server/status
-   */
   app.get('/server/status', async (_req, reply) => {
     const graph = getCachedGraph()
     return reply.send({
