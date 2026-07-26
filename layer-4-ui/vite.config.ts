@@ -11,12 +11,15 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // WebSocket → layer-3-server (порт 3001)
       '/ws': {
-        target: 'ws://localhost:3000',
+        target: 'ws://localhost:3001',
         ws: true,
+        changeOrigin: true,
       },
-      '/api': {
-        target: 'http://localhost:3000',
+      // REST API → layer-3-server (порт 3001)
+      '/graph': {
+        target: 'http://localhost:3001',
         changeOrigin: true,
       },
     },

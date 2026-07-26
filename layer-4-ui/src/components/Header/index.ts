@@ -8,7 +8,14 @@
  *   - ↺ Refresh → POST /graph/rebuild
  *   - ⊡ Fit → emit('cy:fit')
  *   - Переключатель темы (moon/sun)
- *   - updatedAt таймстамп
+ *   - updatedAt таймстамп из store.graph.updatedAt (или X-Updated-At заголовка)
+ *
+ * Интеграция с layer-3-server:
+ *   POST /graph/rebuild
+ *     → эмитит graph:rebuild:start (блокирует кнопку)
+ *     → читает X-Updated-At из ответа
+ *     → эмитит graph:rebuild:done(updatedAt)
+ *     → WS сам пришлёт graph:full после rebuild
  */
 
 import { store }    from '../../store.js'
@@ -59,10 +66,8 @@ function injectHeaderStyles(): void {
       flex-shrink: 1;
     }
 
-    /* ---- Спейсер (раздвигает правые элементы вправо) ---- */
-    .hdr-spacer {
-      flex: 1;
-    }
+    /* ---- Спейсер ---- */
+    .hdr-spacer { flex: 1; }
 
     /* ---- updatedAt ---- */
     .hdr-updated {
@@ -70,6 +75,11 @@ function injectHeaderStyles(): void {
       color: var(--color-text-faint);
       white-space: nowrap;
       flex-shrink: 0;
+      transition: color 300ms;
+    }
+    /* Мигает зелёным на 1.5с после успешного rebuild */
+    .hdr-updated.flash-ok {
+      color: var(--color-success, #437a22);
     }
 
     /* ---- WS-индикатор ---- */
@@ -110,9 +120,9 @@ function injectHeaderStyles(): void {
       0%, 100% { opacity: 1; transform: scale(1); }
       50%       { opacity: 0.45; transform: scale(0.75); }
     }
-    .hdr-ws--connected   .hdr-ws-label { color: var(--color-success);     }
-    .hdr-ws--connecting  .hdr-ws-label { color: var(--color-gold);         }
-    .hdr-ws--error       .hdr-ws-label { color: var(--color-error);        }
+    .hdr-ws--connected    .hdr-ws-label { color: var(--color-success);    }
+    .hdr-ws--connecting   .hdr-ws-label { color: var(--color-gold);        }
+    .hdr-ws--error        .hdr-ws-label { color: var(--color-error);       }
     .hdr-ws--disconnected .hdr-ws-label { color: var(--color-text-faint);  }
 
     /* ---- Кнопки ---- */
@@ -152,7 +162,6 @@ function injectHeaderStyles(): void {
       pointer-events: none;
       opacity: 0.6;
     }
-    /* Спиннер внутри кнопки Refresh во время загрузки */
     @keyframes spin { to { transform: rotate(360deg); } }
     .hdr-refresh-icon.spinning { animation: spin 0.7s linear infinite; display: inline-block; }
 
@@ -185,25 +194,21 @@ function injectHeaderStyles(): void {
   document.head.appendChild(s)
 }
 
-// ================================================================ SVG helpers
+// ================================================================ SVG
 
-/** Лого — граф: 3 круга + линии между ними, currentColor */
 const LOGO_SVG = /* svg */`
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="1.75"
   stroke-linecap="round" stroke-linejoin="round"
   aria-hidden="true">
-  <!-- Рёбра -->
   <line x1="12" y1="5" x2="4"  y2="18"/>
   <line x1="12" y1="5" x2="20" y2="18"/>
   <line x1="4"  y1="18" x2="20" y2="18"/>
-  <!-- Узлы (рисуются поверх рёбер) -->
   <circle cx="12" cy="5"  r="2.5" fill="currentColor" stroke="none"/>
   <circle cx="4"  cy="18" r="2.5" fill="currentColor" stroke="none"/>
   <circle cx="20" cy="18" r="2.5" fill="currentColor" stroke="none"/>
 </svg>`
 
-/** Moon icon (тёмная тема активна — предложить светлую) */
 const MOON_SVG = /* svg */`
 <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2"
@@ -212,7 +217,6 @@ const MOON_SVG = /* svg */`
   <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
 </svg>`
 
-/** Sun icon (светлая тема активна — предложить тёмную) */
 const SUN_SVG = /* svg */`
 <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2"
@@ -223,7 +227,7 @@ const SUN_SVG = /* svg */`
     M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
 </svg>`
 
-// ================================================================ WS status labels
+// ================================================================ WS labels
 
 const WS_LABEL: Record<string, string> = {
   connected:    'live',
@@ -238,14 +242,16 @@ export class Header {
   private el: HTMLElement
   private unsubs: Array<() => void> = []
 
-  /** DOM-рефы */
-  private _pathEl!:    HTMLElement
-  private _wsEl!:      HTMLElement
-  private _wsDot!:     HTMLElement
-  private _wsLabel!:   HTMLElement
-  private _updatedEl!: HTMLElement
+  private _pathEl!:     HTMLElement
+  private _wsEl!:       HTMLElement
+  private _wsDot!:      HTMLElement
+  private _wsLabel!:    HTMLElement
+  private _updatedEl!:  HTMLElement
   private _refreshBtn!: HTMLButtonElement
-  private _themeBtn!:  HTMLButtonElement
+  private _themeBtn!:   HTMLButtonElement
+
+  /** Таймер для flash-ok эффекта на updatedAt */
+  private _flashTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(el: HTMLElement) {
     this.el = el
@@ -263,7 +269,7 @@ export class Header {
     this._syncThemeIcon()
   }
 
-  // ============================================================ update (called by AppShell)
+  // ============================================================ update
 
   update(): void {
     this._syncPath()
@@ -275,6 +281,7 @@ export class Header {
   // ============================================================ destroy
 
   destroy(): void {
+    if (this._flashTimer) clearTimeout(this._flashTimer)
     for (const u of this.unsubs) u()
     this.unsubs = []
   }
@@ -284,26 +291,19 @@ export class Header {
   private _render(): void {
     this.el.innerHTML = ''
 
-    // ---- Лого
     const logo = document.createElement('div')
-    logo.className  = 'hdr-logo'
+    logo.className = 'hdr-logo'
     logo.setAttribute('aria-label', 'Smart Project Map')
-    logo.innerHTML  = LOGO_SVG + '<span>Smart Project Map</span>'
+    logo.innerHTML = LOGO_SVG + '<span>Smart Project Map</span>'
     this.el.appendChild(logo)
 
-    // ---- Разделитель
-    const sep1 = document.createElement('div')
-    sep1.className = 'hdr-sep'
-    sep1.setAttribute('aria-hidden', 'true')
-    this.el.appendChild(sep1)
+    this.el.appendChild(this._makeSep())
 
-    // ---- Путь проекта
     this._pathEl = document.createElement('div')
     this._pathEl.className = 'hdr-path'
     this._pathEl.textContent = '~/projects/…'
     this.el.appendChild(this._pathEl)
 
-    // ---- Спейсер
     const spacer = document.createElement('div')
     spacer.className = 'hdr-spacer'
     this.el.appendChild(spacer)
@@ -312,18 +312,16 @@ export class Header {
     this._updatedEl = document.createElement('div')
     this._updatedEl.className = 'hdr-updated'
     this._updatedEl.setAttribute('aria-live', 'off')
+    this._updatedEl.setAttribute('title', 'Последнее обновление графа')
     this.el.appendChild(this._updatedEl)
 
-    const sep2 = document.createElement('div')
-    sep2.className = 'hdr-sep'
-    sep2.setAttribute('aria-hidden', 'true')
-    this.el.appendChild(sep2)
+    this.el.appendChild(this._makeSep())
 
     // ---- WS-индикатор
     this._wsEl = document.createElement('div')
     this._wsEl.className = 'hdr-ws hdr-ws--disconnected'
     this._wsEl.setAttribute('aria-live', 'polite')
-    this._wsDot   = document.createElement('div')
+    this._wsDot = document.createElement('div')
     this._wsDot.className = 'hdr-ws-dot'
     this._wsLabel = document.createElement('span')
     this._wsLabel.className = 'hdr-ws-label'
@@ -332,12 +330,9 @@ export class Header {
     this._wsEl.appendChild(this._wsLabel)
     this.el.appendChild(this._wsEl)
 
-    const sep3 = document.createElement('div')
-    sep3.className = 'hdr-sep'
-    sep3.setAttribute('aria-hidden', 'true')
-    this.el.appendChild(sep3)
+    this.el.appendChild(this._makeSep())
 
-    // ---- Refresh
+    // ---- Refresh (POST /graph/rebuild)
     this._refreshBtn = document.createElement('button')
     this._refreshBtn.className = 'hdr-btn'
     this._refreshBtn.setAttribute('aria-label', 'Rebuild graph')
@@ -352,10 +347,7 @@ export class Header {
     fitBtn.addEventListener('click', () => emit('cy:fit', undefined as any))
     this.el.appendChild(fitBtn)
 
-    const sep4 = document.createElement('div')
-    sep4.className = 'hdr-sep'
-    sep4.setAttribute('aria-hidden', 'true')
-    this.el.appendChild(sep4)
+    this.el.appendChild(this._makeSep())
 
     // ---- Тема
     this._themeBtn = document.createElement('button')
@@ -364,68 +356,95 @@ export class Header {
     this.el.appendChild(this._themeBtn)
   }
 
+  private _makeSep(): HTMLElement {
+    const sep = document.createElement('div')
+    sep.className = 'hdr-sep'
+    sep.setAttribute('aria-hidden', 'true')
+    return sep
+  }
+
   // ============================================================ private — events
 
   private _bindEvents(): void {
-    // Refresh → POST /graph/rebuild
-    this._refreshBtn.addEventListener('click', () => this._doRefresh())
+    this._refreshBtn.addEventListener('click', () => this._doRebuild())
 
-    // Theme toggle
     this._themeBtn.addEventListener('click', () => {
       const next = store.theme === 'dark' ? 'light' : 'dark'
       emit('theme:changed', next)
     })
 
-    // WS-события
     this.unsubs.push(
       on('ws:connected',    () => this._syncWsStatus()),
       on('ws:disconnected', () => this._syncWsStatus()),
       on('ws:error',        () => this._syncWsStatus()),
     )
 
-    // Обновление графа
     this.unsubs.push(
       on('graph:full',   () => { this._syncPath(); this._syncUpdatedAt() }),
       on('graph:update', () => this._syncUpdatedAt()),
     )
 
-    // Смена темы
+    // После rebuild — flash-ok на updatedAt
+    this.unsubs.push(
+      on('graph:rebuild:done', (updatedAt) => {
+        if (updatedAt > 0) {
+          this._setUpdatedAt(updatedAt, /* flash */ true)
+        }
+      })
+    )
+
     this.unsubs.push(
       on('theme:changed', () => this._syncThemeIcon()),
     )
   }
 
-  // ============================================================ private — sync helpers
+  // ============================================================ private — sync
 
   private _syncWsStatus(): void {
-    const status = store.wsStatus  // 'connecting' | 'connected' | 'disconnected' | 'error'
+    const status = store.wsStatus
     this._wsEl.className = `hdr-ws hdr-ws--${status}`
     this._wsLabel.textContent = WS_LABEL[status] ?? status
   }
 
   private _syncPath(): void {
-    // GraphModel в shared/ не имеет meta — берём из первого узла (пользователь может передать через extra)
     const graph = store.graph
     const extra = (graph as any).meta?.projectPath as string | undefined
     const nodes = graph.nodes
-    const guessed = nodes[0]?.language
-      ? `${nodes.length} сервисов · ${nodes[0].language ?? ''}`
+    const guessed = nodes.length > 0
+      ? `${nodes.length} сервисов · ${nodes[0]?.language ?? ''}`
       : null
     this._pathEl.textContent = extra ?? guessed ?? '~/projects/…'
     this._pathEl.title = extra ?? ''
   }
 
   private _syncUpdatedAt(): void {
-    const ts = store.graph.updatedAt
-    if (!ts) {
+    this._setUpdatedAt(store.graph.updatedAt, false)
+  }
+
+  /**
+   * Форматирует updatedAt и выводит в .hdr-updated.
+   * flash=true → подсвечивает зелёным на 1.5с (после успешного rebuild).
+   */
+  private _setUpdatedAt(ts: number, flash: boolean): void {
+    if (!ts || ts === 0) {
       this._updatedEl.textContent = ''
       return
     }
-    const d = new Date(ts)
+    const d  = new Date(ts)
     const hh = d.getHours().toString().padStart(2, '0')
     const mm = d.getMinutes().toString().padStart(2, '0')
     const ss = d.getSeconds().toString().padStart(2, '0')
     this._updatedEl.textContent = `Синх: ${hh}:${mm}:${ss}`
+    this._updatedEl.setAttribute('title', `Последнее обновление: ${d.toLocaleString()}`)
+
+    if (flash) {
+      if (this._flashTimer) clearTimeout(this._flashTimer)
+      this._updatedEl.classList.add('flash-ok')
+      this._flashTimer = setTimeout(() => {
+        this._updatedEl.classList.remove('flash-ok')
+        this._flashTimer = null
+      }, 1500)
+    }
   }
 
   private _syncThemeIcon(): void {
@@ -439,30 +458,58 @@ export class Header {
 
   // ============================================================ private — rebuild
 
-  private async _doRefresh(): Promise<void> {
+  /**
+   * POST /graph/rebuild
+   *
+   * Протокол:
+   *   1. emit graph:rebuild:start — блокирует кнопку, спиннер
+   *   2. POST /graph/rebuild
+   *   3. Читаем X-Updated-At из response headers
+   *   4. emit graph:rebuild:done(updatedAt)
+   *   5. WS сам пришлёт graph:full с новым графом
+   */
+  private async _doRebuild(): Promise<void> {
     if (this._refreshBtn.classList.contains('loading')) return
 
     this._refreshBtn.classList.add('loading')
-    const icon = this._refreshBtn.querySelector('.hdr-refresh-icon')
+    const icon = this._refreshBtn.querySelector<HTMLElement>('.hdr-refresh-icon')
     icon?.classList.add('spinning')
 
+    emit('graph:rebuild:start', undefined)
+
+    let updatedAt = 0
     try {
       const res = await fetch('/graph/rebuild', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Путь из store (если есть) или пустой body
         body: JSON.stringify({}),
       })
-      if (!res.ok) {
+
+      if (res.ok) {
+        // Читаем updatedAt из заголовка X-Updated-At
+        const raw = res.headers.get('x-updated-at')
+        if (raw) {
+          const n = Number(raw)
+          if (Number.isFinite(n) && n > 0) updatedAt = n
+        }
+        // Если сервер вернул JSON-тело с updatedAt — предпочитаем его
+        try {
+          const body = await res.json() as { updatedAt?: number }
+          if (body.updatedAt && body.updatedAt > 0) updatedAt = body.updatedAt
+        } catch {
+          // Тело необязательно — игнорируем ошибку парсинга
+        }
+        if (updatedAt === 0) updatedAt = Date.now()
+      } else {
         const text = await res.text().catch(() => '')
-        console.warn('[Header] rebuild failed:', res.status, text)
+        console.warn('[Header] POST /graph/rebuild failed:', res.status, text)
       }
-      // Успех: ожидаем graph:full / graph:update по каналу WS
     } catch (err) {
-      console.warn('[Header] rebuild network error:', err)
+      console.warn('[Header] POST /graph/rebuild network error:', err)
     } finally {
       this._refreshBtn.classList.remove('loading')
       icon?.classList.remove('spinning')
+      emit('graph:rebuild:done', updatedAt)
     }
   }
 }

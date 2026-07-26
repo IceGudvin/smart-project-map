@@ -28,7 +28,7 @@ export interface EventMap {
   'node:select':         string
   'node:deselect':       undefined
 
-  // ---- Ребра
+  // ---- Рёбра
   'edge:mouseover':      EdgeHoverPayload
   'edge:mousemove':      EdgeMovePayload
   'edge:mouseout':       undefined
@@ -40,9 +40,24 @@ export interface EventMap {
   // ---- Граф
   'graph:full':          GraphModel
   'graph:update':        { diff: GraphDiff; changedAt: number }
+  /**
+   * graph:refresh — фоллбэк: WS не прислал graph:full за 2с.
+   * AppShell ловит это и делает GET /graph.
+   */
   'graph:refresh':       undefined
   'graph:error':         string
   'graph:layout':        string
+
+  /**
+   * graph:rebuild:start — кнопка Refresh нажата, POST /graph/rebuild отправлен.
+   * Используется для блокировки кнопки во всех подписчиках.
+   */
+  'graph:rebuild:start': undefined
+  /**
+   * graph:rebuild:done — POST /graph/rebuild завершён (успех или ошибка).
+   * payload: updatedAt из заголовка X-Updated-At (мс) или 0 при ошибке.
+   */
+  'graph:rebuild:done':  number
 
   // ---- Cytoscape
   'cy:ready':            unknown

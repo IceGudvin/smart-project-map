@@ -6,6 +6,11 @@
  *   - Запуск wsClient при mount, остановка при destroy
  *   - Получение cy-инстанса через cy:ready
  *   - Связывание всех нужных событий eventBus → store/cy
+ *
+ * Интеграция с layer-3-server:
+ *   - GET  /graph          — фоллбэк если WS не вернул graph:full за 2с
+ *   - POST /graph/rebuild  — принудительный пересбор графа
+ *   - X-Updated-At         — заголовок в обоих ответах, мс-таймштамп
  */
 
 import type { Core } from 'cytoscape'
@@ -29,10 +34,23 @@ import { Canvas }      from '../Canvas/index.js'
 import { DetailPanel } from '../DetailPanel/index.js'
 import { EdgeTooltip } from '../EdgeTooltip/index.js'
 
+// ================================================================ helpers
+
+/**
+ * Парсит миллисекундный таймштамп из заголовка X-Updated-At.
+ * Сервер шлёт строку вида "1753542345678" (Unix ms).
+ * Если заголовка нет или он невалиден — возвращает Date.now().
+ */
+function parseUpdatedAt(res: Response): number {
+  const raw = res.headers.get('x-updated-at')
+  if (raw) {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return Date.now()
+}
+
 // ================================================================ CSS
-//
-// Лейаут инжектируется при первом mount — один раз.
-// Основные токены (цвета, отступы, glassmorphism) заданы в tokens.css.
 
 function injectLayoutStyles(): void {
   if (document.getElementById('app-shell-styles')) return
@@ -139,14 +157,12 @@ export class AppShell {
   private root:        HTMLElement
   private cy:          Core | null = null
 
-  // Компоненты инициализируются при mount()
   private header!:      Header
   private sidebar!:     Sidebar
   private canvas!:      Canvas
   private detailPanel!: DetailPanel
   private edgeTooltip!: EdgeTooltip
 
-  // Отписки для cleanup
   private unsubs: Array<() => void> = []
 
   constructor(root: HTMLElement) {
@@ -160,10 +176,8 @@ export class AppShell {
     this.root.innerHTML = ''
     this.root.className = 'app-shell'
 
-    // Тема — применяем до рендера
     document.documentElement.setAttribute('data-theme', store.theme)
 
-    // ---- Строим DOM -----------------------------------------------
     const headerEl    = document.createElement('header')
     headerEl.className = 'app-header'
 
@@ -181,7 +195,6 @@ export class AppShell {
     this.root.appendChild(headerEl)
     this.root.appendChild(mainEl)
 
-    // ---- Монтируем компоненты ---------------------------------
     this.header      = new Header(headerEl)
     this.sidebar     = new Sidebar(sidebarEl)
     this.detailPanel = new DetailPanel()
@@ -190,11 +203,8 @@ export class AppShell {
 
     this.header.mount()
     this.sidebar.mount()
-
-    // Canvas монтируется первым — создаёт #cy и эмитит cy:ready
     this.canvas.mount()
 
-    // DetailPanel и EdgeTooltip монтируются внутри canvas-wrap
     const dpEl = document.createElement('div')
     dpEl.className = 'app-detail-panel'
     canvasWrapEl.appendChild(dpEl)
@@ -205,13 +215,10 @@ export class AppShell {
     document.body.appendChild(ttEl)
     this.edgeTooltip.mount(ttEl)
 
-    // ---- Подписки eventBus ------------------------------------
     this._bindEvents()
 
-    // ---- Запуск WS ---------------------------------------------------
     connectWs()
 
-    // ---- Keyboard shortcut: Escape → deselect ----------------------
     const onKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') emit('node:deselect', undefined)
     }
@@ -227,12 +234,8 @@ export class AppShell {
     disconnectWs()
   }
 
-  // ============================================================ refresh (store → UI)
+  // ============================================================ refresh
 
-  /**
-   * Вызывается внешне (out of main.ts) после обновления стора.
-   * AppShell сам подписан на граф-события — этат метод для экстренного форсирования обновления.
-   */
   refresh(): void {
     this.sidebar.update()
     this.canvas.update()
@@ -241,14 +244,14 @@ export class AppShell {
   // ============================================================ private
 
   private _bindEvents(): void {
-    // ---- cy:ready — получаем инстанс -------------------------
+    // ---- cy:ready
     this.unsubs.push(
       on('cy:ready', (cyInstance) => {
         this.cy = cyInstance as Core
       })
     )
 
-    // ---- graph:full — полный снимок --------------------------------
+    // ---- graph:full — полный снимок пришёл по WS
     this.unsubs.push(
       on('graph:full', (graph) => {
         if (this.cy) syncGraph(this.cy, graph, store.theme === 'dark')
@@ -257,7 +260,7 @@ export class AppShell {
       })
     )
 
-    // ---- graph:update — инкрементальный дифф ------------------
+    // ---- graph:update — инкрементальный дифф по WS
     this.unsubs.push(
       on('graph:update', ({ diff }) => {
         if (this.cy) syncGraph(this.cy, store.graph, store.theme === 'dark')
@@ -266,24 +269,50 @@ export class AppShell {
       })
     )
 
-    // ---- graph:refresh — HTTP-фоллбэк ---------------------------
+    // ---- graph:refresh — HTTP-фоллбэк (WS не вернул graph:full за 2с)
+    //
+    // Протокол:
+    //   GET /graph
+    //   Ответ: { nodes, edges, updatedAt } + заголовок X-Updated-At: <ms>
+    //   updatedAt берём из тела (data.updatedAt) если есть,
+    //   иначе из заголовка X-Updated-At, иначе Date.now().
     this.unsubs.push(
       on('graph:refresh', async () => {
         try {
           const res  = await fetch('/graph')
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
           const data = await res.json() as import('../../../../shared/src/graph.js').GraphModel
+
+          // Если сервер не заполнил updatedAt в теле — берём из заголовка
+          if (!data.updatedAt || data.updatedAt === 0) {
+            data.updatedAt = parseUpdatedAt(res)
+          }
+
           store.setGraph(data)
           if (this.cy) syncGraph(this.cy, data, store.theme === 'dark')
           this.sidebar.update()
           this.header.update()
         } catch (err) {
-          console.warn('[AppShell] HTTP fallback failed:', err)
+          console.warn('[AppShell] HTTP fallback GET /graph failed:', err)
         }
       })
     )
 
-    // ---- node:select ------------------------------------------------
+    // ---- graph:rebuild:done — POST /graph/rebuild завершился
+    //
+    // Header сам вызывает POST, но AppShell слушает событие чтобы
+    // обновить sidebar/header если граф пришёл позже через WS.
+    // Реальное обновление данных идёт через graph:full по WS после rebuild.
+    this.unsubs.push(
+      on('graph:rebuild:done', (_updatedAt) => {
+        // WS пришлёт graph:full автоматически после rebuild.
+        // Нам достаточно убедиться что header обновит метку времени.
+        this.header.update()
+      })
+    )
+
+    // ---- node:select
     this.unsubs.push(
       on('node:select', (id) => {
         store.selectNode(id)
@@ -295,7 +324,7 @@ export class AppShell {
       })
     )
 
-    // ---- node:deselect ----------------------------------------------
+    // ---- node:deselect
     this.unsubs.push(
       on('node:deselect', () => {
         store.selectNode(null)
@@ -307,7 +336,7 @@ export class AppShell {
       })
     )
 
-    // ---- dataflow:toggle -------------------------------------------
+    // ---- dataflow:toggle
     this.unsubs.push(
       on('dataflow:toggle', (enabled) => {
         store.setDataflowMode(enabled)
@@ -325,18 +354,18 @@ export class AppShell {
       })
     )
 
-    // ---- dataflow:next ---------------------------------------------
+    // ---- dataflow:next
     this.unsubs.push(
       on('dataflow:next', () => {
         store.nextDataflowPath()
         if (this.cy && store.dataflowMode) {
           applyDataflowHighlight(this.cy, store.activeDataflowPath)
         }
-        this.canvas.update()   // обновляет название пути в CanvasToolbar
+        this.canvas.update()
       })
     )
 
-    // ---- theme:changed ---------------------------------------------
+    // ---- theme:changed
     this.unsubs.push(
       on('theme:changed', (theme) => {
         store.setTheme(theme)
