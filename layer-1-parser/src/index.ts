@@ -1,10 +1,26 @@
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import type { RawParserOutput } from '@smart-map/shared';
 import { parseTypeScriptProject } from './languages/typescript.js';
 import { parsePythonProject } from './languages/python.js';
 
 export type { RawParserOutput } from '@smart-map/shared';
+
+/**
+ * Normalize the path to an absolute, real path.
+ * On Windows, Node.js may receive garbled non-ASCII paths depending on
+ * how the string was passed across process boundaries.
+ * realpathSync resolves symlinks AND re-encodes the path using the OS native API,
+ * which fixes Cyrillic/Unicode directory names on Windows.
+ */
+function normalizePath(inputPath: string): string {
+  try {
+    return realpathSync(inputPath)
+  } catch {
+    // If realpathSync fails (path doesn't exist yet), fall back to the input
+    return inputPath
+  }
+}
 
 function detectLanguage(rootDir: string): 'typescript' | 'python' | 'unknown' {
   if (
@@ -26,15 +42,16 @@ function detectLanguage(rootDir: string): 'typescript' | 'python' | 'unknown' {
 export async function parseProject(
   rootDir: string,
 ): Promise<RawParserOutput[]> {
-  const lang = detectLanguage(rootDir);
+  const resolvedDir = normalizePath(rootDir)
+  const lang = detectLanguage(resolvedDir);
 
   if (lang === 'typescript') {
-    return parseTypeScriptProject(rootDir);
+    return parseTypeScriptProject(resolvedDir);
   }
   if (lang === 'python') {
-    return parsePythonProject(rootDir);
+    return parsePythonProject(resolvedDir);
   }
 
-  console.warn(`[layer-1-parser] Unknown language in: ${rootDir}`);
+  console.warn(`[layer-1-parser] Unknown language in: ${resolvedDir}`);
   return [];
 }
