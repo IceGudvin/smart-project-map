@@ -7,14 +7,7 @@ const PORT = Number(process.env['PORT'] ?? 3001)
 const HOST = process.env['HOST'] ?? '0.0.0.0'
 
 async function start(): Promise<void> {
-  const app = Fastify({
-    logger: {
-      transport: {
-        target: 'pino-pretty',
-        options: { colorize: true },
-      },
-    },
-  })
+  const app = Fastify({ logger: true })
 
   // Register WebSocket support
   await app.register(FastifyWebSocket)
