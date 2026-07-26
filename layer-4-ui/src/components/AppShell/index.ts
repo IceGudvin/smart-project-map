@@ -9,7 +9,7 @@
  *
  * Интеграция с layer-3-server:
  *   - GET  /graph          — фоллбэк если WS не вернул graph:full за 2с
- *   - POST /graph/rebuild  — принудительный пересбор графа
+ *   - POST /graph/rebuild  — принудительный пересбор графа (в Header)
  *   - X-Updated-At         — заголовок в обоих ответах, мс-таймштамп
  */
 
@@ -30,6 +30,7 @@ import {
 
 import { Header }      from '../Header/index.js'
 import { Sidebar }     from '../Sidebar/index.js'
+// Canvas, DetailPanel, EdgeTooltip — singleton-объекты, не классы
 import { Canvas }      from '../Canvas/index.js'
 import { DetailPanel } from '../DetailPanel/index.js'
 import { EdgeTooltip } from '../EdgeTooltip/index.js'
@@ -154,14 +155,12 @@ function injectLayoutStyles(): void {
 // ================================================================ AppShell
 
 export class AppShell {
-  private root:        HTMLElement
-  private cy:          Core | null = null
+  private root: HTMLElement
+  private cy:   Core | null = null
 
-  private header!:      Header
-  private sidebar!:     Sidebar
-  private canvas!:      Canvas
-  private detailPanel!: DetailPanel
-  private edgeTooltip!: EdgeTooltip
+  // Header и Sidebar — классы; Canvas/DetailPanel/EdgeTooltip — объекты-синглтоны
+  private header!:  Header
+  private sidebar!: Sidebar
 
   private unsubs: Array<() => void> = []
 
@@ -178,13 +177,14 @@ export class AppShell {
 
     document.documentElement.setAttribute('data-theme', store.theme)
 
-    const headerEl    = document.createElement('header')
+    // ---- DOM-скелет
+    const headerEl = document.createElement('header')
     headerEl.className = 'app-header'
 
-    const mainEl      = document.createElement('div')
-    mainEl.className   = 'app-main'
+    const mainEl = document.createElement('div')
+    mainEl.className = 'app-main'
 
-    const sidebarEl   = document.createElement('aside')
+    const sidebarEl = document.createElement('aside')
     sidebarEl.className = 'app-sidebar'
 
     const canvasWrapEl = document.createElement('div')
@@ -195,25 +195,25 @@ export class AppShell {
     this.root.appendChild(headerEl)
     this.root.appendChild(mainEl)
 
-    this.header      = new Header(headerEl)
-    this.sidebar     = new Sidebar(sidebarEl)
-    this.detailPanel = new DetailPanel()
-    this.edgeTooltip = new EdgeTooltip()
-    this.canvas      = new Canvas(canvasWrapEl)
-
+    // ---- Header: класс — new + mount(уже не нужен el в конструкторе — передаётся в new)
+    this.header = new Header(headerEl)
     this.header.mount()
-    this.sidebar.mount()
-    this.canvas.mount()
 
+    // ---- Sidebar: класс без аргумента в конструкторе — el передаётся в mount(el)
+    this.sidebar = new Sidebar()
+    this.sidebar.mount(sidebarEl)
+
+    // ---- Canvas: singleton-объект — mount(el)
+    Canvas.mount(canvasWrapEl)
+
+    // ---- DetailPanel: singleton-объект — создаёт свой el и вставляет в canvasWrapEl
     const dpEl = document.createElement('div')
     dpEl.className = 'app-detail-panel'
     canvasWrapEl.appendChild(dpEl)
-    this.detailPanel.mount(dpEl)
+    DetailPanel.mount(dpEl)
 
-    const ttEl = document.createElement('div')
-    ttEl.className = 'app-edge-tooltip'
-    document.body.appendChild(ttEl)
-    this.edgeTooltip.mount(ttEl)
+    // ---- EdgeTooltip: singleton-объект — монтирует себя в body самостоятельно
+    EdgeTooltip.mount()
 
     this._bindEvents()
 
@@ -232,13 +232,11 @@ export class AppShell {
     for (const unsub of this.unsubs) unsub()
     this.unsubs = []
     disconnectWs()
-  }
-
-  // ============================================================ refresh
-
-  refresh(): void {
-    this.sidebar.update()
-    this.canvas.update()
+    this.header.destroy()
+    this.sidebar.destroy()
+    Canvas.destroy()
+    DetailPanel.destroy()
+    EdgeTooltip.destroy()
   }
 
   // ============================================================ private
@@ -255,16 +253,16 @@ export class AppShell {
     this.unsubs.push(
       on('graph:full', (graph) => {
         if (this.cy) syncGraph(this.cy, graph, store.theme === 'dark')
-        this.sidebar.update()
+        this.sidebar.update(store.graph)
         this.header.update()
       })
     )
 
     // ---- graph:update — инкрементальный дифф по WS
     this.unsubs.push(
-      on('graph:update', ({ diff }) => {
+      on('graph:update', (_payload) => {
         if (this.cy) syncGraph(this.cy, store.graph, store.theme === 'dark')
-        this.sidebar.update()
+        this.sidebar.update(store.graph)
         this.header.update()
       })
     )
@@ -279,7 +277,7 @@ export class AppShell {
     this.unsubs.push(
       on('graph:refresh', async () => {
         try {
-          const res  = await fetch('/graph')
+          const res = await fetch('/graph')
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
           const data = await res.json() as import('../../../../shared/src/graph.js').GraphModel
@@ -291,7 +289,7 @@ export class AppShell {
 
           store.setGraph(data)
           if (this.cy) syncGraph(this.cy, data, store.theme === 'dark')
-          this.sidebar.update()
+          this.sidebar.update(store.graph)
           this.header.update()
         } catch (err) {
           console.warn('[AppShell] HTTP fallback GET /graph failed:', err)
@@ -299,15 +297,12 @@ export class AppShell {
       })
     )
 
-    // ---- graph:rebuild:done — POST /graph/rebuild завершился
+    // ---- graph:rebuild:done — POST /graph/rebuild завершился (эмитит Header)
     //
-    // Header сам вызывает POST, но AppShell слушает событие чтобы
-    // обновить sidebar/header если граф пришёл позже через WS.
     // Реальное обновление данных идёт через graph:full по WS после rebuild.
+    // AppShell просто синхронизирует header-метку времени.
     this.unsubs.push(
       on('graph:rebuild:done', (_updatedAt) => {
-        // WS пришлёт graph:full автоматически после rebuild.
-        // Нам достаточно убедиться что header обновит метку времени.
         this.header.update()
       })
     )
@@ -319,7 +314,7 @@ export class AppShell {
         if (this.cy && !store.dataflowMode) {
           highlightSelected(this.cy, id)
         }
-        this.detailPanel.show(id)
+        DetailPanel.show(id)
         this.sidebar.setActive(id)
       })
     )
@@ -331,7 +326,7 @@ export class AppShell {
         if (this.cy && !store.dataflowMode) {
           clearDataflowHighlight(this.cy)
         }
-        this.detailPanel.hide()
+        DetailPanel.hide()
         this.sidebar.setActive(null)
       })
     )
@@ -350,7 +345,6 @@ export class AppShell {
           }
         }
         this.header.update()
-        this.canvas.update()
       })
     )
 
@@ -361,7 +355,6 @@ export class AppShell {
         if (this.cy && store.dataflowMode) {
           applyDataflowHighlight(this.cy, store.activeDataflowPath)
         }
-        this.canvas.update()
       })
     )
 
@@ -369,8 +362,17 @@ export class AppShell {
     this.unsubs.push(
       on('theme:changed', (theme) => {
         store.setTheme(theme)
+        document.documentElement.setAttribute('data-theme', theme)
         if (this.cy) updateTheme(this.cy, theme === 'dark')
         this.header.update()
+      })
+    )
+
+    // ---- sidebar:collapsed — адаптируем .app-sidebar под collapsed-класс
+    this.unsubs.push(
+      on('sidebar:collapsed', (collapsed) => {
+        const sidebarEl = this.root.querySelector<HTMLElement>('.app-sidebar')
+        if (sidebarEl) sidebarEl.classList.toggle('collapsed', collapsed as unknown as boolean)
       })
     )
   }
