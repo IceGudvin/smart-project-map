@@ -1,3 +1,34 @@
+## [2026-07-26] — layer-4-ui: структура компонентов + дизайн-система
+
+### Добавлено
+- `layer-4-ui/` — полная файловая структура UI-слоя
+- `src/styles/tokens.css` — CSS-переменные: цвета (light/dark), шрифты (Inter + JetBrains Mono), отступы, радиусы, тени, анимации
+- `src/styles/base.css` — reset + базовые стили (box-sizing, антиалиасинг, body, scrollbar)
+- `src/styles/index.css` — точка входа стилей, импорт tokens + base
+- `src/styles/README.md` — описание дизайн-системы: слои поверхностей, токены, light/dark, шрифты
+- `package.json`, `vite.config.ts`, `index.html`, `src/main.ts`, `src/store.ts` — корневые файлы layer-4-ui
+- `src/README.md` — описание архитектуры слоя: компоненты, store, граф, WebSocket
+- Компоненты с README:
+  - `AppShell` — корневая оболочка, layout header+sidebar+canvas
+  - `Header` — лого, путь проекта, WS-индикатор, кнопки управления
+  - `Sidebar` + `ServiceItem`, `FilterBar` — список сервисов, поиск, фильтрация по типу
+  - `Canvas` + `CanvasToolbar`, `ZoomControls`, `Legend`, `StatsBar` — cytoscape-контейнер и оверлеи
+  - `DetailPanel` + `RouteList`, `SchemaBlock`, `DepList` — панель деталей выбранного узла
+  - `EdgeTooltip` — тултип при наведении на ребро графа
+  - `ui/Badge`, `ui/Button`, `ui/Divider` — атомарные UI-компоненты
+- Вспомогательные модули с README:
+  - `graph/cytoscapeInit.ts` — инициализация cytoscape + dagre, стили узлов и рёбер
+  - `graph/nodeData.ts` — статичные данные панелей для каждого узла
+  - `lib/wsClient.ts` — WebSocket-клиент, reconnect, обработка `graph:full` / `graph:update`
+  - `lib/eventBus.ts` — простой event bus для межкомпонентного общения
+
+### Зафиксировано в репо
+- Roadmap: Issue #7
+- Все файлы структуры layer-4-ui созданы в репозитории
+- Каждый компонент и модуль покрыт `README.md`
+
+---
+
 ## [2026-07-26] — Layer 0: CLI + File Watcher
 
 ### Добавлено
