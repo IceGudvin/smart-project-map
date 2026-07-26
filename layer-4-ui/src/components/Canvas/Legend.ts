@@ -11,8 +11,8 @@ const CSS = `
   gap: var(--space-4, 1rem);
   padding: var(--space-2, 0.5rem) var(--space-4, 1rem);
   border-radius: var(--radius-full, 9999px);
-  background: var(--glass-bg, oklch(from var(--color-surface) l c h / 0.85));
-  border: 1px solid var(--glass-border, oklch(from var(--color-border) l c h / 0.5));
+  background: var(--glass-bg, oklch(from var(--color-surface, #f9f8f5) l c h / 0.85));
+  border: 1px solid var(--glass-border, oklch(from var(--color-border, #d4d1ca) l c h / 0.5));
   box-shadow: var(--glass-shadow, var(--shadow-md));
   backdrop-filter: blur(var(--glass-blur, 12px)) saturate(var(--glass-saturate, 1.6));
   font-size: var(--text-xs, 0.75rem);
@@ -25,30 +25,42 @@ const CSS = `
   align-items: center;
   gap: var(--space-2, 0.5rem);
 }
-.legend-shape--service {
-  width: 14px; height: 14px;
-  border-radius: var(--radius-sm, 0.375rem);
-  background: var(--color-primary);
+.legend-icon {
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
-}
-.legend-shape--database {
-  width: 14px; height: 10px;
-  border-radius: 50%;
-  background: var(--color-blue, #006494);
-  flex-shrink: 0;
-}
-.legend-shape--cache {
-  width: 12px; height: 14px;
-  background: var(--color-purple, #7a39bb);
-  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 `
 
+// Сервис — SVG микросхема (два соединённых блока)
+const ICON_SERVICE = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+  <rect x="1" y="1" width="5" height="5" rx="1.5" fill="var(--color-primary, #01696f)"/>
+  <rect x="8" y="1" width="5" height="5" rx="1.5" fill="var(--color-primary, #01696f)" opacity="0.5"/>
+  <rect x="1" y="8" width="5" height="5" rx="1.5" fill="var(--color-primary, #01696f)" opacity="0.5"/>
+  <rect x="8" y="8" width="5" height="5" rx="1.5" fill="var(--color-primary, #01696f)" opacity="0.25"/>
+</svg>`
+
+// БД — цилиндр / эллипс (дважды)
+const ICON_DATABASE = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+  <ellipse cx="7" cy="3.5" rx="5" ry="2" fill="var(--color-blue, #006494)"/>
+  <path d="M2 3.5v7c0 1.1 2.24 2 5 2s5-.9 5-2v-7" fill="var(--color-blue, #006494)" opacity="0.35"/>
+  <ellipse cx="7" cy="3.5" rx="5" ry="2" fill="none" stroke="var(--color-blue, #006494)" stroke-width="0.75"/>
+  <ellipse cx="7" cy="7" rx="5" ry="2" fill="none" stroke="var(--color-blue, #006494)" stroke-width="0.75" opacity="0.6"/>
+</svg>`
+
+// Кэш — молния гексагон (как на узлах графа)
+const ICON_CACHE = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+  <polygon points="7,1 12.2,3.75 12.2,10.25 7,13 1.8,10.25 1.8,3.75" fill="var(--color-purple, #7a39bb)" opacity="0.85"/>
+  <polygon points="7,3.5 9.9,5.1 9.9,8.4 7,10 4.1,8.4 4.1,5.1" fill="var(--color-bg, #f7f6f2)" opacity="0.4"/>
+</svg>`
+
 const ITEMS = [
-  { cls: 'legend-shape--service',  label: 'Сервис' },
-  { cls: 'legend-shape--database', label: 'БД'      },
-  { cls: 'legend-shape--cache',    label: 'Кэш'     },
+  { icon: ICON_SERVICE,  label: 'Сервис' },
+  { icon: ICON_DATABASE, label: 'БД'      },
+  { icon: ICON_CACHE,    label: 'Кэш'     },
 ]
 
 export const Legend = {
@@ -68,12 +80,15 @@ export const Legend = {
     for (const item of ITEMS) {
       const wrap = document.createElement('div')
       wrap.className = 'legend-item'
-      const shape = document.createElement('div')
-      shape.className = `legend-shape ${item.cls}`
-      shape.setAttribute('aria-hidden', 'true')
+
+      const iconWrap = document.createElement('div')
+      iconWrap.className = 'legend-icon'
+      iconWrap.innerHTML = item.icon
+
       const lbl = document.createElement('span')
       lbl.textContent = item.label
-      wrap.appendChild(shape)
+
+      wrap.appendChild(iconWrap)
       wrap.appendChild(lbl)
       el.appendChild(wrap)
     }

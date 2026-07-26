@@ -5,7 +5,7 @@
  *   .sidebar
  *     ├── .sb-header
  *     │     ├── .sb-title  (заголовок + счётчик)
- *     │     └── кнопка collapse  (⟨/⟩)
+ *     │     └── кнопка collapse  (анимированный chevron)
  *     ├── .sb-search  (поиск)
  *     ├── FilterBar   (чипы All/Service/Infra)
  *     └── .sb-list
@@ -54,7 +54,6 @@ function injectSidebarStyles(): void {
       min-width: 48px;
       max-width: 48px;
     }
-    /* Скрываем всё кроме кнопки collapse при collapsed */
     .sidebar.collapsed .sb-search,
     .sidebar.collapsed .sb-filter-bar,
     .sidebar.collapsed .sb-list,
@@ -96,34 +95,42 @@ function injectSidebarStyles(): void {
       margin-left: var(--space-1, 0.25rem);
     }
 
-    /* ---- Collapse-кнопка ---- */
+    /* ---- Collapse-кнопка — анимированный panel-chevron ---- */
     .sb-collapse {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 24px;
-      height: 24px;
-      border-radius: var(--radius-sm, 0.375rem);
-      border: 1px solid transparent;
-      color: var(--color-text-faint);
-      background: transparent;
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius-md, 0.5rem);
+      border: 1px solid var(--color-border);
+      color: var(--color-text-muted);
+      background: var(--color-surface-offset);
       cursor: pointer;
       flex-shrink: 0;
-      font-size: 12px;
-      line-height: 1;
       transition:
         color 150ms,
         background 150ms,
         border-color 150ms,
-        transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow 150ms;
     }
     .sb-collapse:hover {
       color: var(--color-text);
-      background: var(--color-surface-offset);
-      border-color: var(--color-border);
+      background: var(--color-surface-dynamic);
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 2px oklch(from var(--color-primary, #01696f) l c h / 0.12);
     }
-    .sb-collapse:active { transform: scale(0.9); }
-    .sidebar.collapsed .sb-collapse { transform: rotate(180deg); }
+    .sb-collapse:active {
+      background: var(--color-primary-highlight);
+    }
+    /* SVG стрелка поворачивается плавно при collapsed */
+    .sb-collapse .sb-chevron {
+      transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+      display: block;
+    }
+    .sidebar.collapsed .sb-collapse .sb-chevron {
+      transform: rotate(180deg);
+    }
 
     /* ---- Поиск ---- */
     .sb-search {
@@ -238,9 +245,7 @@ function injectSidebarStyles(): void {
         border-color 150ms;
       outline: none;
     }
-    .si:hover {
-      background: var(--color-surface-offset);
-    }
+    .si:hover { background: var(--color-surface-offset); }
     .si:focus-visible {
       outline: 2px solid var(--color-primary);
       outline-offset: -2px;
@@ -275,8 +280,7 @@ function injectSidebarStyles(): void {
       min-width: 0;
     }
     .si-dot {
-      width: 6px;
-      height: 6px;
+      width: 6px; height: 6px;
       border-radius: 50%;
       background: var(--color-success, #437a22);
       flex-shrink: 0;
@@ -297,48 +301,28 @@ function injectSidebarStyles(): void {
       white-space: nowrap;
       flex-shrink: 0;
     }
-    /* Next.js — dark */
-    .si-badge-nextjs {
-      background: oklch(0.2 0 0 / 0.9);
-      color: #fff;
-    }
-    /* FastAPI — teal */
-    .si-badge-fastapi {
-      background: oklch(from var(--color-primary, #01696f) l c h / 0.15);
-      color: var(--color-primary);
-    }
-    /* PostgreSQL — blue */
-    .si-badge-postgres {
-      background: oklch(from var(--color-blue, #006494) l c h / 0.15);
-      color: var(--color-blue);
-    }
-    /* Redis — red-orange */
-    .si-badge-redis {
-      background: oklch(from var(--color-notification, #a13544) l c h / 0.15);
-      color: var(--color-notification);
-    }
-    /* MinIO / S3 — gold */
-    .si-badge-s3 {
-      background: oklch(from var(--color-gold, #d19900) l c h / 0.15);
-      color: var(--color-gold);
-    }
-    /* Queue / RabbitMQ / Kafka */
-    .si-badge-queue {
-      background: oklch(from var(--color-purple, #7a39bb) l c h / 0.15);
-      color: var(--color-purple);
-    }
-    /* External / unknown */
-    .si-badge-ext {
-      background: var(--color-surface-offset);
-      color: var(--color-text-muted);
-    }
+    .si-badge-nextjs  { background: oklch(0.2 0 0 / 0.9); color: #fff; }
+    .si-badge-fastapi { background: oklch(from var(--color-primary, #01696f) l c h / 0.15); color: var(--color-primary); }
+    .si-badge-postgres{ background: oklch(from var(--color-blue, #006494) l c h / 0.15); color: var(--color-blue); }
+    .si-badge-redis   { background: oklch(from var(--color-notification, #a13544) l c h / 0.15); color: var(--color-notification); }
+    .si-badge-s3      { background: oklch(from var(--color-gold, #d19900) l c h / 0.15); color: var(--color-gold); }
+    .si-badge-queue   { background: oklch(from var(--color-purple, #7a39bb) l c h / 0.15); color: var(--color-purple); }
+    .si-badge-ext     { background: var(--color-surface-offset); color: var(--color-text-muted); }
 
-    /* hidden by search/filter */
     .si[hidden] { display: none !important; }
     .sb-section-wrap[hidden] { display: none !important; }
   `
   document.head.appendChild(s)
 }
+
+// ================================================================ Collapse chevron SVG
+// Двойные стрелки влево («) — поворачиваются через CSS класс .collapsed
+const CHEVRON_SVG = `<svg class="sb-chevron" width="16" height="16" viewBox="0 0 16 16"
+  fill="none" stroke="currentColor" stroke-width="1.75"
+  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <polyline points="10,4 6,8 10,12"/>
+  <polyline points="13,4 9,8 13,12" opacity="0.4"/>
+</svg>`
 
 // ================================================================ Sidebar
 
@@ -363,14 +347,14 @@ export class Sidebar {
     this._renderList(store.graph)
   }
 
-  // ============================================================ update (AppShell вызывает по graph:full/update)
+  // ============================================================ update
 
   update(graph: GraphModel): void {
     this._renderList(graph)
     this._syncCount(graph)
   }
 
-  // ============================================================ setActive — подсветка активного узла
+  // ============================================================ setActive
 
   setActive(nodeId: string | null): void {
     this.items.forEach((item, id) => item.setActive(id === nodeId))
@@ -399,8 +383,9 @@ export class Sidebar {
 
     const collapseBtn = document.createElement('button')
     collapseBtn.className = 'sb-collapse'
-    collapseBtn.setAttribute('aria-label', 'Collapse sidebar')
-    collapseBtn.innerHTML = '⟨'
+    collapseBtn.setAttribute('aria-label', 'Свернуть панель')
+    collapseBtn.setAttribute('title', 'Свернуть панель')
+    collapseBtn.innerHTML = CHEVRON_SVG
     collapseBtn.addEventListener('click', () => this._toggleCollapse())
     header.appendChild(collapseBtn)
 
@@ -417,7 +402,7 @@ export class Sidebar {
     searchWrap.appendChild(this.searchInput)
     this.el.appendChild(searchWrap)
 
-    // ---- FilterBar (чипы)
+    // ---- FilterBar
     const filterWrap = document.createElement('div')
     filterWrap.className = 'sb-filter-bar'
     this.filterBar = new FilterBar(filterWrap, (f) => {
@@ -436,7 +421,6 @@ export class Sidebar {
   // ============================================================ private — events
 
   private _bindEvents(): void {
-    // Debounced search
     let timer: ReturnType<typeof setTimeout>
     this.searchInput.addEventListener('input', () => {
       clearTimeout(timer)
@@ -446,7 +430,6 @@ export class Sidebar {
       }, 200)
     })
 
-    // Обновление графа
     this.unsubs.push(
       on('graph:full',   ({ nodes }) => this._renderList({ nodes } as GraphModel)),
       on('graph:update', ({ diff })  => this._applyDiff(diff.nodes ?? { added: [], removed: [] } as any)),
@@ -494,12 +477,10 @@ export class Sidebar {
   }
 
   private _applyDiff(diff: { added?: GraphModel['nodes']; removed?: string[] }): void {
-    // Удаляем удалённые
     for (const id of diff.removed ?? []) {
       const item = this.items.get(id)
       if (item) { item.el?.remove(); this.items.delete(id) }
     }
-    // Добавляем новые
     for (const node of diff.added ?? []) {
       const label = (node.nodeType === 'service' || node.type === 'service') ? 'Application' : 'Infrastructure'
       let wrap = this.listEl.querySelector<HTMLElement>(`.sb-section-wrap[data-section="${label}"]`)
@@ -527,34 +508,29 @@ export class Sidebar {
     const q = this.searchQuery
     let visibleCount = 0
 
-    this.items.forEach((item, _id) => {
+    this.items.forEach((item) => {
       const el = item.el
       if (!el) return
-
-      const node     = item.node
+      const node = item.node
       const isService = node.nodeType === 'service' || node.type === 'service'
       const passType = this.activeFilter === 'all'
         || (this.activeFilter === 'service' && isService)
         || (this.activeFilter === 'infra'   && !isService)
       const passSearch = !q || node.name.toLowerCase().includes(q)
-
       const visible = passType && passSearch
       el.hidden = !visible
       if (visible) visibleCount++
     })
 
-    // Скрываем пустые секции
     this.listEl.querySelectorAll<HTMLElement>('.sb-section-wrap').forEach(wrap => {
       const anyVisible = [...wrap.querySelectorAll<HTMLElement>('.si')].some(el => !el.hidden)
       wrap.hidden = !anyVisible
     })
 
-    // Информируем Canvas через eventBus — он скроет/показывает узлы cy
     const visibleIds = new Set<string>()
     this.items.forEach((item, id) => { if (!item.el?.hidden) visibleIds.add(id) })
     emit('sidebar:filter', visibleIds as any)
 
-    // Обновляем счётчик
     const countEl = this.el.querySelector('#sb-count')
     if (countEl) countEl.textContent = `(${visibleCount})`
   }
@@ -570,7 +546,10 @@ export class Sidebar {
     this.collapsed = !this.collapsed
     this.el.classList.toggle('collapsed', this.collapsed)
     const btn = this.el.querySelector('.sb-collapse')
-    if (btn) btn.setAttribute('aria-label', this.collapsed ? 'Expand sidebar' : 'Collapse sidebar')
+    if (btn) {
+      btn.setAttribute('aria-label', this.collapsed ? 'Развернуть панель' : 'Свернуть панель')
+      btn.setAttribute('title',      this.collapsed ? 'Развернуть панель' : 'Свернуть панель')
+    }
     emit('sidebar:collapsed', this.collapsed as any)
   }
 }
