@@ -160,7 +160,7 @@ function extractHttpCalls(project: Project): RawHttpCall[] {
   return calls;
 }
 
-// ─── Schemas ──────────────────────────────────────────────────────────────────
+// ─── Schemas ───────────────────────────────────────────────────────────────────
 
 function extractSchemas(project: Project): RawSchema[] {
   const schemas: RawSchema[] = [];
@@ -280,6 +280,7 @@ export async function parseTypeScriptProject(
     framework: detectTsFramework(project),
     routes: extractRoutes(project),
     httpCalls: extractHttpCalls(project),
+    redisCalls: [],   // TypeScript Redis extractor — not yet implemented
     schemas: extractSchemas(project),
     envConfig: extractEnvConfig(project),
     parsedAt: Date.now(),
