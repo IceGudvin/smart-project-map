@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify'
 import type { WebSocket } from '@fastify/websocket'
-import type { RawData } from 'ws'
 import type { WsEvent } from '@smart-map/shared'
 import { store } from '../store.js'
 
@@ -39,7 +38,7 @@ export function registerWsHandler(app: FastifyInstance): void {
     }
 
     // Handle incoming messages (pong, ignored)
-    socket.on('message', (raw: RawData) => {
+    socket.on('message', (raw: Buffer | ArrayBuffer | Buffer[]) => {
       try {
         const msg = JSON.parse(raw.toString()) as { type?: string }
         if (msg.type === 'pong') return
