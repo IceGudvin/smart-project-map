@@ -1,3 +1,24 @@
+## [2026-07-26] — Bugfix: DetailPanel — рекурсия close(), show()/hide(), edge-дубли
+
+### Исправлено
+- **Баг 1 — `Maximum call stack size exceeded` (рекурсия)**
+  - `DetailPanel.close()` вызывал `emit('node:deselect')` → подписчик `on('node:deselect', () => this.close())` снова вызывал `close()` → stack overflow
+  - Введён флаг `_closing: boolean` — повторный вход в `close()` прерывается сразу
+  - Подписка в `mount()` изменена: `on('node:deselect', () => this.hide())` — `hide()` → `_closeOnly()` без emit
+- **Баг 2 — `DetailPanel.show is not a function` / `DetailPanel.hide is not a function`**
+  - `AppShell/index.ts` вызывал `DetailPanel.show(id)` / `DetailPanel.hide()` — методов не было
+  - Добавлены публичные алиасы: `show(id)` → `_openById(id)`, `hide()` → `_closeOnly()`
+- **Архитектура close/hide**
+  - `close()` — для пользователя (кнопка ×, Esc, backdrop) → скрыть + `emit('node:deselect')`
+  - `hide()` — для AppShell (ответ на событие) → только скрыть DOM, без emit
+  - `_closeOnly()` — примитив без побочных эффектов
+
+### Зафиксировано в репо
+- Коммит: `9fa8bb9`
+- Файлы: `layer-4-ui/src/components/DetailPanel/index.ts`, `index.js`
+
+---
+
 ## [2026-07-26] — ProjectPicker: выбор проекта через UI (Issue #6)
 
 ### Добавлено
@@ -32,96 +53,58 @@
 ## [2026-07-26] — Русификация UI + фиксы экспортов + SVG-иконки Legend (Issue #6)
 
 ### Добавлено
-- `Legend.ts` — SVG-иконки для всех трёх типов узлов:
-  - Сервис — 2×2 сетка блоков (micro-schema)
-  - БД — цилиндр с двумя кольцами
-  - Кэш — гексагон с внутренним вырезом
-- `Sidebar/index.ts` — кнопка collapse: заменен символ `⟨` на анимированный SVG double-chevron `«`;
-  поворот 180° через `.sb-chevron` + CSS `.collapsed`; видимая рамка + hover-подсветка
+- `Legend.ts` — SVG-иконки для всех трёх типов узлов
+- `Sidebar/index.ts` — кнопка collapse: SVG double-chevron, поворот 180°
 
 ### Исправлено
-- `Legend.ts` — удалён несуществующий `import { injectOnce }` — Vite бросал `import-analysis` error
-- `CanvasToolbar.ts` и `Legend.ts` — возвращён экспорт в формате `export const X = { mount() }` —
-  предыдущий патч переименовал экспорт в функцию, что вызвало `SyntaxError` белый экран
+- `Legend.ts` — удалён несуществующий `import { injectOnce }`
+- `CanvasToolbar.ts` и `Legend.ts` — возвращён экспорт `export const X = { mount() }`
 
 ### Русифицировано
-- `Header` — `live`→`активен`, `Refresh`→`Обновить`, `Fit`→`Вписать`, статусы `подключение`/`отключён`/`ошибка`
-- `CanvasToolbar` — `Pan`→`Пан`, `DataFlow`→`Поток`, `Layout`→`Раскладка`, разметки `Дерево`/`Граф`/`Сетка`
-- `FilterBar` — `All`→`Все`, `Service`→`Сервисы`, `Infra`→`Инфра`
-- `Legend` — `Service`→`Сервис`, `Database`→`БД`, `Cache`→`Кэш`
+- Header, CanvasToolbar, FilterBar, Legend
 
 ### Зафиксировано в репо
-- Коммит: `e000458` — русификация Header
-- Коммит: `f508cbe` — русификация CanvasToolbar + FilterBar + Legend
-- Коммит: `77e4cb2` — fix Legend.ts import
-- Коммит: `ce4f7d3` — fix export формата CanvasToolbar + Legend
-- Коммит: `ff926df` — SVG-иконки Legend + animated collapse chevron
+- Коммиты: `e000458`, `f508cbe`, `77e4cb2`, `ce4f7d3`, `ff926df`
 
 ---
 
 ## [2026-07-26] — Bugfix: AppShell — TypeError: X is not a constructor (Issue #6)
 
 ### Исправлено
-- `AppShell/index.ts` — критический баг: `Canvas`, `DetailPanel`, `EdgeTooltip` экспортируются как singleton-объекты (`export const X = {}`), а AppShell вызывал `new X()` — это бросало `TypeError: X is not a constructor` и завешивало старт приложения
-- `new Canvas(canvasWrapEl)` → `Canvas.mount(canvasWrapEl)`
-- `new DetailPanel()` → `DetailPanel.mount(dpEl)`
-- `new EdgeTooltip()` → `EdgeTooltip.mount()` (сам монтируется в body)
-- `new Sidebar(sidebarEl)` → `new Sidebar()` + `sidebar.mount(sidebarEl)`
-- `this.sidebar.update()` → `this.sidebar.update(store.graph)` (метод требует `GraphModel`)
-- `this.canvas.update()` — удалён (метод не существует, Canvas реагирует через eventBus)
-- `theme:changed` — добавлен `document.documentElement.setAttribute('data-theme', theme)`
-- `sidebar:collapsed` — AppShell теперь синхронизирует `.app-sidebar.collapsed` класс
+- `AppShell/index.ts` — `new Canvas/DetailPanel/EdgeTooltip` → `.mount()` на singleton-объектах
+- `new Sidebar(el)` → `new Sidebar()` + `mount(el)`
+- `this.sidebar.update()` → `this.sidebar.update(store.graph)`
+- `this.canvas.update()` — удалён
+- `theme:changed`, `sidebar:collapsed` — добавлены обработчики
 
 ### Зафиксировано в репо
 - Коммит: `5e88c6c`
-- Roadmap Issue #6 — чекбокс 🐛 Bugfix — все отмечены ✅
 
 ---
 
 ## [2026-07-26] — Layer 4: Интеграция layer-3-server — финализация (Issue #6)
 
 ### Добавлено
-- `eventBus.ts` — два новых события:
-  - `graph:rebuild:start` — эмитится Header при нажатии Refresh (блокирует кнопку)
-  - `graph:rebuild:done(updatedAt: number)` — эмитится после завершения `POST /graph/rebuild`
-- `AppShell/index.ts` — хелпер `parseUpdatedAt(res)`: читает `X-Updated-At` из HTTP-ответа
-- `Header/index.ts`:
-  - `_doRebuild()`: читает `X-Updated-At` из response headers
-  - `_setUpdatedAt(ts, flash)`: flash=true → анимация зелёным
+- `graph:rebuild:start` / `graph:rebuild:done(updatedAt)` в eventBus
+- `parseUpdatedAt(res)` в AppShell
+- `_doRebuild()` + `_setUpdatedAt(ts, flash)` в Header
 
 ### Исправлено
-- `vite.config.ts` — proxy исправлен: `/ws` → `ws://localhost:3001`, `/graph` → `http://localhost:3001`
+- `vite.config.ts` — proxy: `/ws` → `ws://localhost:3001`
 
 ### Зафиксировано в репо
 - Коммит: `e1b655d`
-- Roadmap Issue #6 — чекбоксы 🛠 Интеграция layer-3-server закрыты ✅
 
 ---
 
 ## [2026-07-26] — Layer 4: Интеграция layer-3-server — graphClient + updatedAt (Issue #6)
 
 ### Добавлено
-- `layer-4-ui/src/lib/graphClient.ts` — HTTP-слой поверх WS:
-  - `initGraphClient()` — подписывается на `graph:refresh` → `GET /graph`
-  - `rebuildGraph()` — `POST /graph/rebuild`
-  - `fetchGraph()` — чистый `GET /graph`
-- `AppShell/index.ts` — `initGraphClient()` вызывается после `connectWs()`
-
-### Зафиксировано в репо
-- Roadmap Issue #6 — чекбоксы 🛠 Интеграция layer-3-server частично ✅
-- Файл: `layer-4-ui/src/lib/graphClient.ts` (новый)
+- `layer-4-ui/src/lib/graphClient.ts`
 
 ---
 
-## [2026-07-26] — Layer 4: DataFlow режим — 3 пути + dash + dimmed (Issue #6)
-
-### Добавлено
-- `Canvas/DataFlowMode.ts` — оркестратор режима: 3 пути, `applyHighlight`, `_startDash`, `PathSelector`
-- `styles/dataflow.css` — `@keyframes df-dash`, `@keyframes df-pulse`, `.dimmed`, `.df-active`
-- `Canvas/CanvasToolbar.ts` — `emit('dataflow:next')`, `on('dataflow:toggle')`
-
-### Зафиксировано в репо
-- Roadmap Issue #6 — чекбокс ⚡ DataFlow отмечен ✅
+## [2026-07-26] — Layer 4: DataFlow режим (Issue #6)
 - Коммит: `d4bd8e8`
 
 ---
