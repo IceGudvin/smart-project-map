@@ -126,7 +126,8 @@ function buildStylesheet(isDark: boolean): Stylesheet[] {
         'text-halign':          'center',
         'color':                textColor,
         'font-size':            12,
-        'font-family':          "'Satoshi', 'Inter', system-ui, sans-serif",
+        // Cytoscape поддерживает только одно имя шрифта без кавычек
+        'font-family':          'Inter',
         'font-weight':          '500' as any,
         'width':                120,
         'height':               44,
@@ -430,13 +431,14 @@ export function initCytoscape({ container, graph, isDark = true }: CytoscapeInit
   const cy = cytoscape({
     container,
     elements,
-    style:            buildStylesheet(isDark),
-    layout:           { name: 'preset' },
-    minZoom:          0.25,
-    maxZoom:          3,
-    wheelSensitivity: 0.3,
-    autoungrabify:    false,
-    autounselectify:  false,
+    style:           buildStylesheet(isDark),
+    layout:          { name: 'preset' },
+    minZoom:         0.25,
+    maxZoom:         3,
+    // wheelSensitivity намеренно не задаётся — используем дефолт Cytoscape (1)
+    // чтобы скролл работал одинаково на всех мышах и ОС
+    autoungrabify:   false,
+    autounselectify: false,
   })
 
   runLayout(cy)
