@@ -6,6 +6,51 @@
 
 ---
 
+## [2026-07-26] — Реализация Layer 1: парсеры TypeScript + Python
+
+Ссылка на Roadmap: [Issue #2](https://github.com/IceGudvin/smart-project-map/issues/2)
+
+### Добавлено
+- **`layer-1-parser/src/languages/typescript.ts`** — полноценная реализация на `ts-morph`:
+  - `extractRoutes` — Express/Fastify (`app.get/post/...`) и NestJS (`@Get/@Post/...`) декораторы
+  - `extractHttpCalls` — `fetch()` (с парсингом `options.method`), `axios.*`, `got.*`
+  - `extractSchemas` — TypeScript `interface` и `type` алиасы (с `TypeLiteral`)
+  - `extractEnvConfig` — `process.env.KEY` и `process.env['KEY']`
+  - `try/catch` вокруг каждого файла во всех экстракторах — один битый файл не роняет весь парсинг
+- **`layer-1-parser/src/languages/python.ts`** — полноценная реализация на regex:
+  - `extractRoutes` — `@router.post/get/put/patch/delete`, `@app.post/get`
+  - `extractHttpCalls` — `httpx.*`, `requests.*`
+  - `extractSchemas` — Pydantic v2 `BaseModel` классы, поля с `Optional[T]` детекцией
+  - `extractEnvConfig` — `os.environ`, `os.getenv`, парсинг `.env` файла
+  - `try/catch` по каждому файлу
+- **`layer-1-parser/src/index.ts`** — оркестратор:
+  - `parseProject(rootDir)` — автоопределение языка по `tsconfig.json` / `package.json` / `pyproject.toml` / `requirements.txt`
+  - Маршрутизация на TypeScript или Python экстрактор
+
+### Изменено
+- **`shared/src/parser.ts`** — `RawHttpCall.method` переведён из `method?: HttpMethod` в `method: HttpMethod` (дефолт `'GET'`)
+  - Причина: `exactOptionalPropertyTypes: true` не позволяет присваивать `T | undefined` в `field?: T`
+
+### Проблемы и фиксы в ходе сессии
+- `exactOptionalPropertyTypes` с `method?: HttpMethod` — 3 цикла исправлений, решено через изменение типа в `shared/`
+
+### TODO (следующая сессия)
+- Python extractor: перейти с regex на `ast-grep` (более точный парсинг)
+- TypeScript extractor: добавить распознавание Zod/TypeBox схем
+- Ручная проверка на Leadway-проекте
+
+### Зафиксировано в репо
+- Фикс `RawHttpCall.method`: [`68a8dba`](https://github.com/IceGudvin/smart-project-map/commit/68a8dbad59d49c73364c6be2a3afcbbb94c216d7)
+- Парсеры TypeScript + Python: [`f88b149`](https://github.com/IceGudvin/smart-project-map/commit/f88b149a16d11fba998c19b68eb8b9eed0148025)
+- `try/catch` + CHANGELOG: этот коммит
+
+### Результаты проверки
+- `layer-1-parser/` `pnpm typecheck` — ✅ 0 errors
+- `layer-1-parser/` `pnpm build` — ✅ 12.05 KB dist/index.js
+- `shared/` `pnpm build` — ✅
+
+---
+
 ## [2026-07-26] — Старт реализации: monorepo + shared/ + layer-1-parser скелет
 
 Ссылка на Roadmap: [Issue #1](https://github.com/IceGudvin/smart-project-map/issues/1)
@@ -19,13 +64,11 @@
   - `events.ts` — `WsEvent` (union: `graph:full`, `graph:update`, `graph:error`, `ping`)
   - `parser.ts` — `RawParserOutput`, `RawRoute`, `RawHttpCall`, `RawSchema`, `EnvEntry`
   - `index.ts` — реэкспорт всего публичного API
-- **`layer-1-parser/`** — скелет из 8 файлов-заглушек с правильными импортами из `@smart-map/shared`:
-  - `src/index.ts`, `languages/typescript.ts`, `languages/python.ts`
-  - `extractors/routes.ts`, `extractors/schemas.ts`, `extractors/http-calls.ts`, `extractors/env-config.ts`
-- `SPACE_INSTRUCTIONS.md` — добавлен раздел про Roadmap-issue: формат названия, шаблон, правила
+- **`layer-1-parser/`** — скелет из 8 файлов-заглушек с правильными импортами из `@smart-map/shared`
+- `SPACE_INSTRUCTIONS.md` — добавлен раздел про Roadmap-issue
 
 ### Изменено
-- `package.json` (корень) — обновлён: добавлены скрипты `typecheck`, `clean`; порядок workspaces исправлен (`shared` первым)
+- `package.json` (корень) — обновлён: добавлены скрипты `typecheck`, `clean`
 
 ### Проблемы и фиксы в ходе сессии
 - `ast-grep-napi` → `@ast-grep/napi` — неверное имя пакета
@@ -41,58 +84,36 @@
 ### Результаты проверки
 - `pnpm install` — ✅
 - `shared/` `pnpm typecheck` — ✅ 0 errors
-- `shared/` `pnpm build` — ✅ `dist/index.js`, `dist/index.cjs`, `dist/index.d.ts`
+- `shared/` `pnpm build` — ✅
 - `layer-1-parser/` `pnpm typecheck` — ✅ 0 errors
-- `layer-1-parser/` `pnpm build` — ✅ `dist/index.js`, `dist/index.d.ts`
+- `layer-1-parser/` `pnpm build` — ✅
 
 ---
 
 ## [2026-07-26] — Референсный проект Leadway, детализация Python/FastAPI слоя
 
 ### Добавлено
-- **Раздел «Референсный проект: Leadway»** в `CONCEPT.md` — реальный production-проект как основной тест-кейс для всех слоёв
-- Таблица стека Leadway: FastAPI 0.111, SQLAlchemy 2.0, PostgreSQL (asyncpg), Redis (aioredis), MinIO, PyJWT, Next.js, Zustand, Docker
-- Структура `backend/app/` с пояснением каждой папки (routers → services → models → schemas → core → integrations)
-- Конкретный data-flow пример `POST /auth/login` для Layer 5: LoginRequest → bcrypt verify → JWT → Redis cache → frontend Bearer header
+- **Раздел «Референсный проект: Leadway»** в `CONCEPT.md`
+- Таблица стека Leadway: FastAPI 0.111, SQLAlchemy 2.0, PostgreSQL, Redis, MinIO, PyJWT, Next.js
+- Data-flow пример `POST /auth/login` для Layer 5
 
 ### Изменено
-- **Layer 1 (Parser)** — детализирован Python/FastAPI extractor:
-  - Паттерны `ast-grep` для `@router.post(...)`, `@router.get(...)`, `@app.post(...)`
-  - Парсинг Pydantic v2 моделей из `schemas/` (поля, типы, required)
-  - Автосвязка роута с `response_model` → `inputSchema` + `outputSchema`
-  - Распознавание инфраструктурных сервисов из `backend/.env`: `DATABASE_URL` → PostgreSQL, `REDIS_URL` → Redis, `MINIO_ENDPOINT` → MinIO
-  - Инструменты: `ast-grep` (Python grammar) как основной, `libcst` для сложного анализа
-- **Layer 1** — обновлён `RawParserOutput`: добавлены поля `language` и `framework`
-- **Layer 2 (Graph Builder)** — Resolver расширен: теперь распознаёт инфраструктурные узлы (PostgreSQL, Redis, MinIO) из `.env`, не только сервисы приложения
-- **Layer 4 (UI)** — добавлена логика визуального различия узлов по `nodeType`: service (прямоугольник), infrastructure (цилиндр/шестиугольник), external (пунктирная граница)
-- **shared/ — тип `ServiceNode`** — добавлены поля `framework` и `nodeType`
-- **Roadmap** — MVP теперь явно включает Python/FastAPI парсер наравне с TypeScript парсером
+- Layer 1 — детализирован Python/FastAPI extractor
+- Layer 2 — Resolver расширен: инфраструктурные узлы из `.env`
+- Layer 4 — визуальное различие узлов по `nodeType`
+- `shared/` — добавлены поля `framework` и `nodeType` в `ServiceNode`
 
 ### Зафиксировано в репо
-- `CONCEPT.md` — коммит `02b6992` (точечные правки, старые разделы не тронуты)
+- `CONCEPT.md` — коммит `02b6992`
 
 ---
 
 ## [2026-07-26] — Инициализация проекта, концепция и архитектура
 
 ### Добавлено
-- `README.md` — описание проекта, таблица слоёв, roadmap
-- `CONCEPT.md` — полное описание всех 6 слоёв: назначение, обоснование технологий, файловые структуры, типы данных, примеры
-- `SPACE_INSTRUCTIONS.md` — правила работы с репозиторием для AI-сессий
-- `CHANGELOG.md` — этот файл
-- `package.json` — npm workspaces (каждый слой — отдельный пакет)
-- Каталоги слоёв: `layer-0-cli/`, `layer-1-parser/`, `layer-2-graph/`, `layer-3-server/`, `layer-4-ui/`, `layer-5-dataflow/`, `shared/`
-- README.md в каждом слое с описанием ответственности и планируемых файлов
+- `README.md`, `CONCEPT.md`, `SPACE_INSTRUCTIONS.md`, `CHANGELOG.md`
+- `package.json` — npm workspaces
+- Каталоги слоёв и README в каждом
 
-### Зафиксировано в концепте
-- **Layer 0**: CLI через `npx`, мультиплатформенность (chokidar + open + path.normalize), переход к VS Code Extension в v1.0
-- **Layer 1**: статический анализ (Tree-sitter, ts-morph, ast-grep), 4 extractors (routes, http-calls, schemas, env-config)
-- **Layer 2**: Graph Builder, Resolver (URL → ServiceNode), кэш in-memory
-- **Layer 3**: Fastify + WebSocket, REST API (`/api/graph`, `/api/node/:id`, `/api/preview`, `/ws`)
-- **Layer 4**: Cytoscape.js + dagre-layout для MVP, компоненты Graph/NodeCard/EdgeTooltip/Sidebar
-- **Layer 5**: DataFlow Visualizer — killer feature, два подхода (консервативный MVP + продвинутый AST-анализ)
-- **shared/**: типы ServiceNode, Edge, GraphModel, WsEvent, GraphDiff
-
-### Аналитика
-- Проведён анализ рынка: существующие инструменты (Datadog, vizOps, TADIS, Kiali, Coordimap) не покрывают связку "статический анализ + видимость payload + реальное время без агентов"
-- Уникальное преимущество: показывает не только топологию, но и что именно передаётся между сервисами
+### Зафиксировано в репо
+- Инициализация репозитория
