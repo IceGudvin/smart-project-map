@@ -2,17 +2,17 @@ import Fastify from 'fastify'
 import FastifyWebSocket from '@fastify/websocket'
 import { registerGraphRoutes } from './routes/graph.js'
 import { registerWsHandler } from './ws/handler.js'
+import { pathToFileURL } from 'node:url'
 
 let _app: ReturnType<typeof Fastify> | null = null
 
 /**
  * startServer — creates and starts the Fastify instance.
- * Can be called by layer-0-cli directly (no HTTP needed for rebuild).
- * Falls back to env PORT/HOST if no args provided.
+ * Called by layer-0-cli directly, or in standalone mode via pnpm dev.
  */
 export async function startServer(
   port: number = Number(process.env['PORT'] ?? 3001),
-  host: string = process.env['HOST'] ?? '0.0.0.0',
+  host: string = process.env['HOST'] ?? '127.0.0.1',
 ): Promise<void> {
   const app = Fastify({ logger: true })
   _app = app
@@ -28,14 +28,16 @@ export async function startServer(
   console.log(`   WS:   ws://localhost:${port}/ws`)
 }
 
-// Re-export store and broadcast so layer-0-cli can import everything from one place
 export { store } from './store.js'
 export { broadcast } from './ws/handler.js'
 
-// ─── Standalone mode (pnpm dev inside layer-3-server) ──────────────────────
-
-const isMain = process.argv[1]?.endsWith('index.ts')
-  || process.argv[1]?.endsWith('index.js')
+// ─── Standalone mode: only when this file is the entry point ───────────────
+// ESM-safe check: compare import.meta.url with argv[1] as file URL
+const entryUrl = pathToFileURL(process.argv[1] ?? '').href
+const isMain = import.meta.url === entryUrl
+  || import.meta.url.replace(/\.js$/, '.ts') === entryUrl
+  || entryUrl.endsWith('layer-3-server/src/index.ts')
+  || entryUrl.endsWith('layer-3-server/dist/index.js')
 
 if (isMain) {
   const shutdown = async (): Promise<void> => {
