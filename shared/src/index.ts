@@ -2,9 +2,13 @@ export type {
   Language,
   Framework,
   HttpMethod,
+  NodeType,
+  SchemaField,
+  Schema,
+  SchemaRef,
+  Route,
   ServiceNode,
   Edge,
-  EdgeKind,
   GraphModel,
   GraphDiff,
 } from './graph.js'
@@ -20,4 +24,10 @@ export type {
   RawParserOutput,
 } from './parser.js'
 
-export type { WsEvent, WsEventKind } from './events.js'
+export type {
+  WsEvent,
+  WsEventGraphFull,
+  WsEventGraphUpdate,
+  WsEventGraphError,
+  WsEventPing,
+} from './events.js'
