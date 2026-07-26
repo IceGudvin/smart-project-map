@@ -1,3 +1,28 @@
+## [2026-07-26] — Bugfix: Cytoscape calc(), Canvas race condition, Fastify 500
+
+### Исправлено
+- **Баг 1 — `Uncaught TypeError: Cannot read properties of null` (cytoscapeInit.js)**
+  - Cytoscape не поддерживает CSS `calc()` в свойствах стиля (`background-position-x: calc(100% - 5px)` → `null` при парсинге → краш всего графа)
+  - Заменены `calc()`-выражения на абсолютные пиксельные константы:
+    `ICON_POS_X = NODE_W - ICON_SIZE - ICON_MARGIN` (100px), `ICON_POS_Y = ICON_MARGIN` (4px)
+  - Граф теперь инициализируется без предупреждений и крашей
+
+- **Баг 2 — race condition: граф приходил до подписки (Canvas/index.js)**
+  - `graph:full` от wsClient мог прийти раньше чем `requestAnimationFrame` регистрировал `on('graph:full', ...)` → данные улетали в никуда → граф не отображался
+  - Подписки `on('graph:full')` / `on('graph:update')` перенесены **до** `requestAnimationFrame`
+  - Добавлена очередь `_pendingGraph` — если граф пришёл до инициализации `_cy`, он применяется сразу после `initCytoscape()`
+
+- **Баг 3 — `POST /server/start` → 500 Internal Server Error (project.ts)**
+  - Ручной вызов `reply.header('Content-Type', 'application/json')` перед `reply.send({})` вызывал ошибку `FST_ERR_REP_ALREADY_SENT` в Fastify 4+ → UI получал 500, показывал «Ошибка: Internal Server Error»
+  - Убран лишний `reply.header()` — Fastify выставляет Content-Type сам при `.send(object)`
+  - Добавлена явная схема `response: { 200, 400 }` в роут и `try/catch` в хендлере
+
+### Зафиксировано в репо
+- Коммит: `813b765`
+- Файлы: `layer-4-ui/src/graph/cytoscapeInit.js`, `layer-4-ui/src/components/Canvas/index.js`, `layer-3-server/src/routes/project.ts`
+
+---
+
 ## [2026-07-26] — Bugfix: DetailPanel — рекурсия close(), show()/hide(), edge-дубли
 
 ### Исправлено
