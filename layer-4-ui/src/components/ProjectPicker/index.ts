@@ -4,10 +4,10 @@
  * Открывается ТОЛЬКО через emit('project:pick:show') — т.е. по кнопке в Header.
  * Никакого автопоказа при старте / ошибке WS.
  *
- * Исправления:
- *   - fb-overlay/pp-overlay получают data-theme с <html> при создании
- *   - inheritTheme применяет тему через setAttribute перед rAF,
- *     чтобы избежать race-condition с AppShell theme:changed handler
+ * FIX: CSS-переменные приведены к именам из tokens.css:
+ *   --surface, --bg, --border, --text, --text-muted, --text-faint,
+ *   --primary, --primary-h, --surface-off, --surface-dyn, --divider,
+ *   --error, --success — без префикса --color-*.
  */
 
 import { emit, on } from '../../lib/eventBus.js'
@@ -23,11 +23,6 @@ function saveRecent(path: string): void {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)) } catch { /* ok */ }
 }
 
-/**
- * Копирует data-theme с <html> на элемент и подписывается на theme:changed.
- * FIX: sync читает тему из store через событие, не из getAttribute —
- *      это гарантирует корректную тему даже если вызов опережает setAttribute в AppShell.
- */
 function inheritTheme(el: HTMLElement): () => void {
   const applyTheme = (theme?: string) => {
     const t = theme ?? document.documentElement.getAttribute('data-theme')
@@ -35,7 +30,6 @@ function inheritTheme(el: HTMLElement): () => void {
     else el.removeAttribute('data-theme')
   }
   applyTheme()
-  // theme:changed эмитится с новым значением темы как payload
   return on('theme:changed', (theme) => applyTheme(theme as string))
 }
 
@@ -49,7 +43,7 @@ function injectStyles(): void {
     /* ── overlay ── */
     .pp-overlay {
       position: fixed; inset: 0; z-index: 1000;
-      background: oklch(0 0 0 / 0.6);
+      background: oklch(0 0 0 / 0.55);
       backdrop-filter: blur(8px);
       display: flex; align-items: center; justify-content: center;
       opacity: 0; transition: opacity 200ms ease;
@@ -59,10 +53,10 @@ function injectStyles(): void {
 
     /* ── modal ── */
     .pp-modal {
-      background: var(--color-surface, #1e1e1e);
-      border: 1px solid var(--color-border, #333);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 14px;
-      box-shadow: 0 32px 80px oklch(0 0 0 / 0.55);
+      box-shadow: var(--shadow-lg);
       padding: 1.5rem;
       width: min(520px, calc(100vw - 2rem));
       display: flex; flex-direction: column; gap: 1rem;
@@ -75,76 +69,76 @@ function injectStyles(): void {
     .pp-title {
       display: flex; align-items: center; gap: 0.5rem;
       font-size: var(--text-base, 1rem); font-weight: 600;
-      color: var(--color-text, #eee);
+      color: var(--text);
     }
     .pp-close {
       width: 28px; height: 28px;
       display: flex; align-items: center; justify-content: center;
       border-radius: 6px; cursor: pointer;
-      color: var(--color-text-faint, #666);
+      color: var(--text-faint);
       transition: background 150ms, color 150ms;
     }
-    .pp-close:hover { background: var(--color-surface-offset, #2a2a2a); color: var(--color-text, #eee); }
+    .pp-close:hover { background: var(--surface-off); color: var(--text); }
 
     .pp-path-row { display: flex; gap: 0.5rem; align-items: center; }
     .pp-input {
       flex: 1; min-width: 0;
-      background: var(--color-bg, #141414);
-      border: 1px solid var(--color-border, #333);
+      background: var(--bg);
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 0.5rem 0.75rem;
       font-family: var(--font-mono, 'JetBrains Mono', monospace);
       font-size: 0.8rem;
-      color: var(--color-text, #eee);
+      color: var(--text);
       outline: none;
-      transition: border-color 160ms;
+      transition: border-color 160ms, box-shadow 160ms;
     }
     .pp-input:focus {
-      border-color: var(--color-primary, #4f98a3);
-      box-shadow: 0 0 0 3px oklch(from var(--color-primary, #4f98a3) l c h / 0.15);
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-bg, rgba(1,105,111,0.12));
     }
-    .pp-input::placeholder { color: var(--color-text-faint, #555); }
+    .pp-input::placeholder { color: var(--text-faint); }
 
     .pp-btn-browse {
       flex-shrink: 0;
       display: flex; align-items: center; gap: 0.4rem;
-      background: var(--color-surface-offset, #2a2a2a);
-      border: 1px solid var(--color-border, #333);
+      background: var(--surface-off);
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 0.5rem 0.75rem;
       font-size: 0.8rem; font-weight: 500;
-      color: var(--color-text-muted, #999);
+      color: var(--text-muted);
       cursor: pointer; white-space: nowrap;
       transition: background 160ms, border-color 160ms, color 160ms;
     }
     .pp-btn-browse:hover {
-      background: var(--color-surface-dynamic, #333);
-      border-color: var(--color-primary, #4f98a3);
-      color: var(--color-text, #eee);
+      background: var(--surface-dyn);
+      border-color: var(--primary);
+      color: var(--text);
     }
     .pp-btn-open {
       flex-shrink: 0;
-      background: var(--color-primary, #4f98a3);
+      background: var(--primary);
       border: none; border-radius: 8px;
       padding: 0.5rem 1.1rem;
       font-size: 0.85rem; font-weight: 600;
       color: #fff; cursor: pointer; white-space: nowrap;
       transition: background 160ms, opacity 160ms;
     }
-    .pp-btn-open:hover { background: var(--color-primary-hover, #227f8b); }
+    .pp-btn-open:hover { background: var(--primary-h); }
     .pp-btn-open:disabled { opacity: 0.45; cursor: not-allowed; }
 
     .pp-status {
       min-height: 1.2em; font-size: 0.8rem;
-      color: var(--color-text-muted, #777);
+      color: var(--text-muted);
       display: flex; align-items: center; gap: 0.4rem;
     }
-    .pp-status.error   { color: var(--color-error, #d163a7); }
-    .pp-status.success { color: var(--color-success, #6daa45); }
+    .pp-status.error   { color: var(--error); }
+    .pp-status.success { color: var(--success); }
 
     .pp-section-label {
       font-size: 0.7rem; text-transform: uppercase;
-      letter-spacing: 0.08em; color: var(--color-text-faint, #555);
+      letter-spacing: 0.08em; color: var(--text-faint);
       margin-bottom: 0.25rem;
     }
     .pp-recent-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
@@ -152,37 +146,37 @@ function injectStyles(): void {
       display: flex; align-items: center; gap: 0.5rem;
       padding: 0.35rem 0.5rem; border-radius: 6px; cursor: pointer;
       font-family: var(--font-mono, monospace); font-size: 0.75rem;
-      color: var(--color-text-muted, #888);
+      color: var(--text-muted);
       transition: background 120ms, color 120ms;
       overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
     }
-    .pp-recent-item:hover { background: var(--color-surface-offset, #2a2a2a); color: var(--color-text, #eee); }
-    .pp-recent-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-primary, #4f98a3); flex-shrink: 0; opacity: 0.6; }
+    .pp-recent-item:hover { background: var(--surface-off); color: var(--text); }
+    .pp-recent-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); flex-shrink: 0; opacity: 0.6; }
 
-    .pp-divider { height: 1px; background: var(--color-divider, #2a2a2a); }
-    .pp-hint { font-size: 0.72rem; color: var(--color-text-faint, #555); line-height: 1.5; }
+    .pp-divider { height: 1px; background: var(--divider); }
+    .pp-hint { font-size: 0.72rem; color: var(--text-faint); line-height: 1.5; }
     .pp-hint code {
       font-family: var(--font-mono, monospace);
-      background: var(--color-surface-offset, #2a2a2a);
+      background: var(--surface-off);
       padding: 0.1em 0.35em; border-radius: 3px;
-      color: var(--color-text-muted, #999);
+      color: var(--text-muted);
     }
 
     /* ── file browser ── */
     .fb-overlay {
       position: fixed; inset: 0; z-index: 1100;
       display: flex; align-items: center; justify-content: center;
-      background: oklch(0 0 0 / 0.65);
+      background: oklch(0 0 0 / 0.60);
       backdrop-filter: blur(4px);
       opacity: 0; transition: opacity 180ms ease;
       pointer-events: none;
     }
     .fb-overlay.visible { opacity: 1; pointer-events: auto; }
     .fb-modal {
-      background: var(--color-surface, #1e1e1e);
-      border: 1px solid var(--color-border, #333);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 12px;
-      box-shadow: 0 40px 100px oklch(0 0 0 / 0.6);
+      box-shadow: var(--shadow-lg);
       width: min(580px, calc(100vw - 2rem));
       height: min(480px, 80vh);
       display: flex; flex-direction: column;
@@ -194,100 +188,100 @@ function injectStyles(): void {
     .fb-topbar {
       display: flex; align-items: center; gap: 0.5rem;
       padding: 0.75rem 1rem;
-      border-bottom: 1px solid var(--color-divider, #2a2a2a);
+      border-bottom: 1px solid var(--divider);
       flex-shrink: 0;
     }
-    .fb-topbar-title { font-size: 0.8rem; font-weight: 600; color: var(--color-text, #eee); flex-shrink: 0; }
+    .fb-topbar-title { font-size: 0.8rem; font-weight: 600; color: var(--text); flex-shrink: 0; }
     .fb-breadcrumb {
       display: flex; align-items: center; gap: 0; flex: 1; min-width: 0; overflow: hidden;
     }
     .fb-crumb {
-      font-size: 0.72rem; color: var(--color-text-muted, #888);
+      font-size: 0.72rem; color: var(--text-muted);
       cursor: pointer; padding: 0.2rem 0.35rem; border-radius: 4px;
       white-space: nowrap; transition: background 120ms, color 120ms;
       max-width: 120px; overflow: hidden; text-overflow: ellipsis;
     }
-    .fb-crumb:hover { background: var(--color-surface-offset, #2a2a2a); color: var(--color-text, #eee); }
-    .fb-crumb-sep { color: var(--color-text-faint, #555); font-size: 0.7rem; padding: 0 1px; flex-shrink: 0; }
+    .fb-crumb:hover { background: var(--surface-off); color: var(--text); }
+    .fb-crumb-sep { color: var(--text-faint); font-size: 0.7rem; padding: 0 1px; flex-shrink: 0; }
     .fb-close {
       width: 26px; height: 26px; flex-shrink: 0;
       display: flex; align-items: center; justify-content: center;
       border-radius: 5px; cursor: pointer;
-      color: var(--color-text-faint, #666);
+      color: var(--text-faint);
       transition: background 120ms, color 120ms;
     }
-    .fb-close:hover { background: var(--color-surface-offset, #2a2a2a); color: var(--color-text, #eee); }
+    .fb-close:hover { background: var(--surface-off); color: var(--text); }
 
     .fb-list {
       flex: 1; overflow-y: auto; padding: 0.5rem;
       scrollbar-width: thin;
-      scrollbar-color: var(--color-surface-dynamic, #333) transparent;
+      scrollbar-color: var(--surface-dyn) transparent;
     }
     .fb-empty {
       display: flex; align-items: center; justify-content: center;
-      height: 100%; color: var(--color-text-faint, #555); font-size: 0.8rem;
+      height: 100%; color: var(--text-faint); font-size: 0.8rem;
     }
     .fb-item {
       display: flex; align-items: center; gap: 0.6rem;
       padding: 0.45rem 0.75rem; border-radius: 6px; cursor: pointer;
-      font-size: 0.82rem; color: var(--color-text-muted, #999);
+      font-size: 0.82rem; color: var(--text-muted);
       transition: background 120ms, color 120ms;
       user-select: none;
     }
-    .fb-item:hover { background: var(--color-surface-offset, #2a2a2a); color: var(--color-text, #eee); }
+    .fb-item:hover { background: var(--surface-off); color: var(--text); }
     .fb-item.selected {
-      background: oklch(from var(--color-primary, #4f98a3) l c h / 0.18);
-      color: var(--color-text, #eee);
-      border: 1px solid oklch(from var(--color-primary, #4f98a3) l c h / 0.3);
+      background: var(--primary-bg, rgba(1,105,111,0.10));
+      color: var(--text);
+      border: 1px solid var(--primary-hl);
     }
-    .fb-item-icon { flex-shrink: 0; color: var(--color-primary, #4f98a3); opacity: 0.85; }
+    .fb-item-icon { flex-shrink: 0; color: var(--primary); opacity: 0.85; }
     .fb-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     .fb-bottombar {
       display: flex; align-items: center; gap: 0.75rem;
       padding: 0.75rem 1rem;
-      border-top: 1px solid var(--color-divider, #2a2a2a);
+      border-top: 1px solid var(--divider);
       flex-shrink: 0;
-      background: var(--color-surface-offset, #1a1a1a);
+      background: var(--surface-off);
     }
     .fb-selected-path {
       flex: 1; min-width: 0;
       font-family: var(--font-mono, monospace); font-size: 0.75rem;
-      color: var(--color-text-muted, #999);
+      color: var(--text-muted);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .fb-selected-path.has-value { color: var(--color-text, #eee); }
+    .fb-selected-path.has-value { color: var(--text); }
     .fb-btn-up {
       display: flex; align-items: center; gap: 0.3rem;
-      background: none; border: 1px solid var(--color-border, #333);
+      background: none; border: 1px solid var(--border);
       border-radius: 6px; padding: 0.4rem 0.65rem;
-      font-size: 0.75rem; color: var(--color-text-muted, #888);
+      font-size: 0.75rem; color: var(--text-muted);
       cursor: pointer; white-space: nowrap; flex-shrink: 0;
       transition: background 150ms, color 150ms, border-color 150ms;
     }
-    .fb-btn-up:hover { background: var(--color-surface-offset, #2a2a2a); border-color: var(--color-text-faint); color: var(--color-text, #eee); }
+    .fb-btn-up:hover { background: var(--surface-off); border-color: var(--text-faint); color: var(--text); }
     .fb-btn-up:disabled { opacity: 0.3; cursor: not-allowed; }
     .fb-btn-select {
-      background: var(--color-primary, #4f98a3);
+      background: var(--primary);
       border: none; border-radius: 6px;
       padding: 0.4rem 1rem;
       font-size: 0.8rem; font-weight: 600;
       color: #fff; cursor: pointer; white-space: nowrap; flex-shrink: 0;
       transition: background 150ms, opacity 150ms;
     }
-    .fb-btn-select:hover { background: var(--color-primary-hover, #227f8b); }
+    .fb-btn-select:hover { background: var(--primary-h); }
     .fb-btn-select:disabled { opacity: 0.4; cursor: not-allowed; }
 
     .fb-loading {
       display: flex; align-items: center; justify-content: center;
       height: 100%; gap: 0.5rem;
-      color: var(--color-text-faint, #555); font-size: 0.8rem;
+      color: var(--text-faint); font-size: 0.8rem;
     }
     @keyframes fb-spin { to { transform: rotate(360deg); } }
     .fb-spinner {
       width: 16px; height: 16px;
-      border: 2px solid var(--color-border, #333);
-      border-top-color: var(--color-primary, #4f98a3);
+      border: 2px solid var(--border);
+      border-top-color: var(--primary);
       border-radius: 50%;
       animation: fb-spin 0.7s linear infinite;
     }
@@ -337,7 +331,6 @@ function _fbRender(result: BrowseResult): void {
 
   _fbCurrentPath = result.path
 
-  // Breadcrumb
   const breadcrumb = topbar.querySelector('.fb-breadcrumb')!
   breadcrumb.innerHTML = result.breadcrumbs.map((c, i) =>
     `<span class="fb-crumb" data-path="${c.path}">${c.label}</span>` +
@@ -407,10 +400,7 @@ function _showFileBrowser(initialPath: string, onSelect: (path: string) => void)
 
   const overlay = document.createElement('div')
   overlay.className = 'fb-overlay'
-
-  // inheritTheme — до appendChild, чтобы тема была сразу
   _fbThemeUnsub = inheritTheme(overlay)
-
   _fbOverlay = overlay
 
   overlay.innerHTML = `
@@ -472,10 +462,7 @@ function _render(): void {
 
   const overlay = document.createElement('div')
   overlay.className = 'pp-overlay'
-
-  // inheritTheme — до appendChild
   _ppThemeUnsub = inheritTheme(overlay)
-
   _overlay = overlay
 
   const recent = getRecent()
@@ -606,7 +593,6 @@ function _setStatus(msg: string, type: '' | 'error' | 'success'): void {
 
 export const ProjectPicker = {
   mount(): void {
-    // Подписываемся ТОЛЬКО на явное событие открытия — от кнопки в Header
     on('project:pick:show', () => ProjectPicker.show())
   },
   show(): void { if (_overlay) return; _render() },
