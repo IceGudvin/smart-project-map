@@ -5,6 +5,7 @@ import type {
   RawParserOutput,
   RawRoute,
   RawHttpCall,
+  RawRedisCall,
   RawSchema,
   EnvEntry,
 } from '@smart-map/shared';
@@ -33,16 +34,19 @@ function extractRoutes(filePath: string, src: string): RawRoute[] {
 const HTTP_CALL_DIRECT_RE =
   /(?:httpx|requests)\.(get|post|put|patch|delete)\s*\(\s*(["'`]?)([^"'`),\n]+)\2/gi;
 
-// Pattern 2: client.get(...) / client.post(...) — httpx.AsyncClient / httpx.Client instance
-// Covers: await client.post(url), await self._client.get(url), response = client.post("url")
+// Pattern 2: await client.post(f"{settings.backend_url}/api/...") — httpx.AsyncClient instance
+// Covers patterns seen in Leadway agent/sender.py:
+//   async with httpx.AsyncClient() as client:
+//       resp = await client.post(f"{settings.backend_url}/api/messages/send", ...)
 const HTTP_CALL_CLIENT_RE =
-  /(?:self\.)?(?:\w+_)?client\.(get|post|put|patch|delete)\s*\(\s*(["'`f]?)([^"'`),\n]{3,})\2/gi;
+  /\bawait\s+(?:\w+\.)?client\.(get|post|put|patch|delete)\s*\(\s*([f]?["'`])([^"'`\n]{4,})\2/gi;
 
 function extractHttpCalls(filePath: string, src: string): RawHttpCall[] {
   const calls: RawHttpCall[] = [];
 
-  // Direct calls: httpx.post("https://..."), requests.get(url)
   let match: RegExpExecArray | null;
+
+  // Direct: httpx.post("https://..."), requests.get(url)
   HTTP_CALL_DIRECT_RE.lastIndex = 0;
   while ((match = HTTP_CALL_DIRECT_RE.exec(src)) !== null) {
     const method = match[1]!.toUpperCase() as RawHttpCall['method'];
@@ -51,15 +55,48 @@ function extractHttpCalls(filePath: string, src: string): RawHttpCall[] {
     calls.push({ method, url, file: filePath, line });
   }
 
-  // Client instance calls: await client.post(url, ...), self.client.get("https://...")
+  // Client instance: await client.post(f"{settings.backend_url}/api/...")
   HTTP_CALL_CLIENT_RE.lastIndex = 0;
   while ((match = HTTP_CALL_CLIENT_RE.exec(src)) !== null) {
     const method = match[1]!.toUpperCase() as RawHttpCall['method'];
     const url = match[3]!.trim();
-    // Skip obvious false positives: very short strings, pure variable names with dots (db.get)
-    if (url.length < 3 || /^\w+\.\w+$/.test(url)) continue;
     const line = src.slice(0, match.index).split('\n').length;
     calls.push({ method, url, file: filePath, line });
+  }
+
+  return calls;
+}
+
+// ─── Redis Calls ──────────────────────────────────────────────────────────────
+
+// Publish: rpush/lpush/xadd/publish with a string queue name
+// e.g. await redis.rpush("draft_queue", ...) or await r.rpush("summary_queue", ...)
+const REDIS_PUBLISH_RE =
+  /\b(?:await\s+)?(?:\w+\.)?(?:redis|r|conn|client)\.(rpush|lpush|xadd|publish)\s*\(\s*["']([^"']+)["']/gi;
+
+// Consume: blpop/brpop/subscribe/xread with a string queue name
+// e.g. await redis.blpop("draft_queue") or r.subscribe("events")
+const REDIS_CONSUME_RE =
+  /\b(?:await\s+)?(?:\w+\.)?(?:redis|r|conn|client)\.(blpop|brpop|subscribe|xread)\s*\(\s*["']([^"']+)["']/gi;
+
+function extractRedisCalls(filePath: string, src: string): RawRedisCall[] {
+  const calls: RawRedisCall[] = [];
+  let match: RegExpExecArray | null;
+
+  REDIS_PUBLISH_RE.lastIndex = 0;
+  while ((match = REDIS_PUBLISH_RE.exec(src)) !== null) {
+    const command = match[1]!.toLowerCase();
+    const queueName = match[2]!;
+    const line = src.slice(0, match.index).split('\n').length;
+    calls.push({ queueName, direction: 'publish', command, file: filePath, line });
+  }
+
+  REDIS_CONSUME_RE.lastIndex = 0;
+  while ((match = REDIS_CONSUME_RE.exec(src)) !== null) {
+    const command = match[1]!.toLowerCase();
+    const queueName = match[2]!;
+    const line = src.slice(0, match.index).split('\n').length;
+    calls.push({ queueName, direction: 'consume', command, file: filePath, line });
   }
 
   return calls;
@@ -160,6 +197,7 @@ export async function parsePythonProject(
 
   const routes: RawRoute[] = [];
   const httpCalls: RawHttpCall[] = [];
+  const redisCalls: RawRedisCall[] = [];
   const schemas: RawSchema[] = [];
   let envConfig: EnvEntry[] = [];
 
@@ -173,6 +211,7 @@ export async function parsePythonProject(
     }
     routes.push(...extractRoutes(filePath, src));
     httpCalls.push(...extractHttpCalls(filePath, src));
+    redisCalls.push(...extractRedisCalls(filePath, src));
     schemas.push(...extractSchemas(filePath, src));
     envConfig.push(...extractEnvConfig(src));
   }
@@ -190,6 +229,7 @@ export async function parsePythonProject(
     framework: 'fastapi',
     routes,
     httpCalls,
+    redisCalls,
     schemas,
     envConfig,
     parsedAt: Date.now(),

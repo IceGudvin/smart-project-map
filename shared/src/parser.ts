@@ -36,6 +36,24 @@ export interface RawHttpCall {
   line: number
 }
 
+// ─── Raw Redis call (queue push/pop — inter-service messaging) ───────────────
+
+export type RedisCallDirection = 'publish' | 'consume'
+
+export interface RawRedisCall {
+  /** Queue/channel name as it appears in source, e.g. "draft_queue" */
+  queueName: string
+  /**
+   * publish — service writes to the queue (rpush, lpush, publish)
+   * consume — service reads from the queue (blpop, brpop, subscribe, xread)
+   */
+  direction: RedisCallDirection
+  /** Raw Redis command used: rpush | lpush | blpop | brpop | publish | subscribe | xread | xadd */
+  command: string
+  file: string
+  line: number
+}
+
 // ─── Raw schema (before cross-service linking) ───────────────────────────
 
 export interface RawSchemaField {
@@ -70,6 +88,8 @@ export interface RawParserOutput {
   framework: Framework
   routes: RawRoute[]
   httpCalls: RawHttpCall[]
+  /** Inter-service Redis queue interactions (publish + consume) */
+  redisCalls: RawRedisCall[]
   schemas: RawSchema[]
   envConfig: EnvEntry[]
   /** Unix timestamp ms — when this output was produced */

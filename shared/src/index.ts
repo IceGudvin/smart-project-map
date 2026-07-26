@@ -1,36 +1,23 @@
-/**
- * @smart-map/shared — public API
- * Re-exports all types used across layers.
- */
-
 export type {
   Language,
   Framework,
-  NodeType,
   HttpMethod,
-  SchemaField,
-  Schema,
-  SchemaRef,
-  Route,
   ServiceNode,
   Edge,
+  EdgeKind,
   GraphModel,
   GraphDiff,
 } from './graph.js'
 
 export type {
-  WsEvent,
-  WsEventGraphFull,
-  WsEventGraphUpdate,
-  WsEventGraphError,
-  WsEventPing,
-} from './events.js'
-
-export type {
   RawRoute,
   RawHttpCall,
-  RawSchemaField,
+  RawRedisCall,
+  RedisCallDirection,
   RawSchema,
+  RawSchemaField,
   EnvEntry,
   RawParserOutput,
 } from './parser.js'
+
+export type { WsEvent, WsEventKind } from './events.js'
