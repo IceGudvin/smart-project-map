@@ -6,6 +6,7 @@ import { store } from './store.js'
 export let _projectDir = ''
 
 export function setProjectDir(dir: string): void {
+  console.log(`[scanner] setProjectDir called: ${dir}`)
   _projectDir = dir
 }
 
@@ -16,23 +17,28 @@ export function getCachedGraph(): GraphModel | null {
 
 /**
  * Run full scan: layer-1-parser → layer-2-graph → store.
- * Сохраняет результат в store — тот же экземпляр, что читает ws/server.ts.
- * Returns the new GraphModel and a diff vs the previous snapshot (null on first scan).
  */
 export async function runScan(): Promise<{ graph: GraphModel; diff: GraphDiff | null }> {
   if (!_projectDir) throw new Error('[scanner] projectDir is not set')
 
-  console.log(`[scanner] scanning ${_projectDir}...`)
+  console.log(`[scanner] runScan START → ${_projectDir}`)
   const t0 = Date.now()
 
+  console.log('[scanner] calling parseProject...')
   const rawOutputs = await parseProject(_projectDir)
-  const graph = buildGraph(rawOutputs)
+  console.log(`[scanner] parseProject done — ${rawOutputs.length} file(s)`)
 
-  // Сохраняем в store — store.set() сам считает дифференциал
+  console.log('[scanner] calling buildGraph...')
+  const graph = buildGraph(rawOutputs)
+  console.log(`[scanner] buildGraph done — nodes: ${graph.nodes.length}, edges: ${graph.edges.length}`)
+
+  console.log('[scanner] calling store.set(graph)...')
+  const prevSize = store.get()?.nodes.length ?? 0
   const diff: GraphDiff | null = store.set(graph)
+  console.log(`[scanner] store.set done — prev nodes: ${prevSize} → new nodes: ${graph.nodes.length}, diff: ${diff ? `patch (${diff.added.length} added, ${diff.removed.length} removed, ${diff.updated.length} updated)` : 'null (first scan)'}`)
 
   console.log(
-    `[scanner] done in ${Date.now() - t0}ms — ` +
+    `[scanner] runScan DONE in ${Date.now() - t0}ms — ` +
     `${graph.nodes.length} nodes, ${graph.edges.length} edges`,
   )
 

@@ -49,11 +49,13 @@ export function disconnectWs(): void {
 function _connect(): void {
   if (_stopped) return
 
+  console.log(`[wsClient] _connect() attempt=${_reconnectAttempt}`)
   emit('ws:status', 'connecting')
 
   _ws = new WebSocket(WS_URL)
 
   _ws.onopen = () => {
+    console.log('[wsClient] onopen — connection established')
     _reconnectAttempt = 0
     emit('ws:status', 'connected')
     _graphReceived = false
@@ -61,7 +63,7 @@ function _connect(): void {
     // Фоллбэк: если graph:full не пришёл за 2с — HTTP GET /graph
     _fallbackTimer = setTimeout(() => {
       if (!_graphReceived) {
-        console.warn('[wsClient] graph:full not received in 2s — falling back to GET /graph')
+        console.warn('[wsClient] graph:full NOT received in 2s — falling back to GET /graph')
         emit('graph:refresh', undefined)
       }
     }, FALLBACK_TIMEOUT_MS)
@@ -76,9 +78,12 @@ function _connect(): void {
       return
     }
 
+    console.log(`[wsClient] onmessage type=${msg.type}`, msg.payload)
+
     if (msg.type === 'graph:full') {
       _clearFallback()
       _graphReceived = true
+      console.log('[wsClient] graph:full received → calling store.setGraph + emit graph:full')
       store.setGraph(msg.payload as Parameters<typeof store.setGraph>[0])
       emit('graph:full', store.graph)
       return
@@ -94,9 +99,11 @@ function _connect(): void {
     // просто отменяем фоллбэк если проект не задан
     if (msg.type === 'server:status') {
       const status = msg.payload as { ready: boolean; projectDir?: string }
+      console.log(`[wsClient] server:status → ready=${status.ready}, projectDir=${status.projectDir ?? 'null'}`)
       if (!status.ready) {
+        console.log('[wsClient] server not ready — cancelling fallback timer, waiting for graph:full after scan')
         _clearFallback()
-        _graphReceived = true
+        _graphReceived = true // предотвращаем фоллбэк GET /graph пока нет проекта
       }
       return
     }
@@ -104,8 +111,9 @@ function _connect(): void {
     console.debug('[wsClient] unknown message type:', msg.type)
   }
 
-  _ws.onclose = () => {
+  _ws.onclose = (ev) => {
     _clearFallback()
+    console.log(`[wsClient] onclose — code=${ev.code}, reason=${ev.reason || '(none)'}`, `_stopped=${_stopped}`)
     emit('ws:status', 'disconnected')
 
     if (_stopped) return
@@ -116,7 +124,8 @@ function _connect(): void {
     setTimeout(_connect, delay)
   }
 
-  _ws.onerror = () => {
+  _ws.onerror = (ev) => {
+    console.warn('[wsClient] onerror:', ev)
     // onclose вызовется следом
   }
 }
@@ -125,5 +134,6 @@ function _clearFallback(): void {
   if (_fallbackTimer) {
     clearTimeout(_fallbackTimer)
     _fallbackTimer = null
+    console.log('[wsClient] fallback timer cleared')
   }
 }

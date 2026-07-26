@@ -5,10 +5,6 @@ import { store } from '../store.js'
 
 const clients = new Set<WebSocket>()
 
-/**
- * projectDir — текущий путь к проекту.
- * Устанавливается из routes/server.ts после POST /server/start.
- */
 let _projectDir: string | null = null
 
 export function setProjectDir(dir: string): void {
@@ -18,15 +14,20 @@ export function setProjectDir(dir: string): void {
 export function registerWs(app: FastifyInstance): void {
   app.get('/ws', { websocket: true }, (socket) => {
     clients.add(socket)
-    console.log(`[ws] client connected (total: ${clients.size})`)
 
     const cached: GraphModel | null = store.get()
 
+    // ── ДИАГНОСТИКА ──────────────────────────────────────────────────
+    console.log(`[ws] client connected (total: ${clients.size})`)
+    console.log(`[ws] store.get() at connect → ${cached ? `graph OK (nodes: ${cached.nodes.length}, edges: ${cached.edges.length}, updatedAt: ${cached.updatedAt})` : 'NULL'}`)
+    console.log(`[ws] _projectDir at connect → ${_projectDir ?? 'null'}`)
+    // ─────────────────────────────────────────────────────────────────
+
     if (cached) {
-      // Проект уже просканирован — отправляем граф
+      console.log('[ws] → sending graph:full to new client')
       socket.send(JSON.stringify({ type: 'graph:full', payload: cached }))
     } else {
-      // Проекта нет — сообщаем UI чтобы показал ProjectPicker
+      console.log('[ws] → sending server:status { ready: false } (no graph in store)')
       socket.send(JSON.stringify({
         type:    'server:status',
         payload: { ready: false, projectDir: null },
@@ -47,18 +48,20 @@ export function registerWs(app: FastifyInstance): void {
 
 /** Broadcast graph:full to all connected clients */
 export function broadcastFull(graph: GraphModel): void {
+  console.log(`[ws] broadcastFull called — clients: ${clients.size}, nodes: ${graph.nodes.length}, edges: ${graph.edges.length}`)
   const msg = JSON.stringify({ type: 'graph:full', payload: graph })
   for (const client of clients) {
     try { client.send(msg) } catch { clients.delete(client) }
   }
-  console.log(`[ws] broadcast graph:full → ${clients.size} client(s)`)
+  console.log(`[ws] broadcast graph:full → ${clients.size} client(s) done`)
 }
 
 /** Broadcast graph:patch (incremental diff) to all connected clients */
 export function broadcastPatch(diff: GraphDiff): void {
+  console.log(`[ws] broadcastPatch called — clients: ${clients.size}`)
   const msg = JSON.stringify({ type: 'graph:patch', payload: diff })
   for (const client of clients) {
     try { client.send(msg) } catch { clients.delete(client) }
   }
-  console.log(`[ws] broadcast graph:patch → ${clients.size} client(s)`)
+  console.log(`[ws] broadcast graph:patch → ${clients.size} client(s) done`)
 }
