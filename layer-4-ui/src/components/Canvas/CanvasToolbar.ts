@@ -3,8 +3,8 @@
  *
  * Кнопки: Пан | Поток [имя пути] ⟳ Далее | Раскладка
  *
- * Переключение режима DataFlow и смена пути —
- * это делает DataFlowMode.ts.
+ * Экспорт: `export const CanvasToolbar = { mount(container) → handle }`
+ * handle: { setDataflow(active), syncDataflowPath(idx) }
  */
 
 import { on, emit } from '../../lib/eventBus.js'
@@ -66,116 +66,131 @@ const LAYOUT_LABELS: Record<Layout, string> = {
   grid:  'Сетка',
 }
 
-export function mountCanvasToolbar(container: HTMLElement): void {
-  // inject CSS once
-  if (!document.getElementById('canvas-toolbar-css')) {
-    const s = document.createElement('style')
-    s.id = 'canvas-toolbar-css'
-    s.textContent = CSS
-    document.head.appendChild(s)
-  }
+export interface CanvasToolbarHandle {
+  setDataflow(active: boolean): void
+  syncDataflowPath(idx: number): void
+}
 
-  const el = document.createElement('div')
-  el.className = 'canvas-toolbar'
-  el.setAttribute('role', 'toolbar')
-  el.setAttribute('aria-label', 'Инструменты канваса')
+export const CanvasToolbar = {
+  mount(container: HTMLElement): CanvasToolbarHandle {
+    if (!document.getElementById('canvas-toolbar-css')) {
+      const s = document.createElement('style')
+      s.id = 'canvas-toolbar-css'
+      s.textContent = CSS
+      document.head.appendChild(s)
+    }
 
-  // --- Пан
-  const btnPan = document.createElement('button')
-  btnPan.className = 'toolbar-btn'
-  btnPan.setAttribute('aria-pressed', 'false')
-  btnPan.title = 'Режим панорамирования (пробел)'
-  btnPan.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-    aria-hidden="true"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3"
-    /><path d="M2 12h20M12 2v20"/></svg> Пан`
-  el.appendChild(btnPan)
+    const el = document.createElement('div')
+    el.className = 'canvas-toolbar'
+    el.setAttribute('role', 'toolbar')
+    el.setAttribute('aria-label', 'Инструменты канваса')
 
-  // --- Разделитель
-  const sep1 = document.createElement('div')
-  sep1.className = 'toolbar-sep'
-  sep1.setAttribute('aria-hidden', 'true')
-  el.appendChild(sep1)
+    // --- Пан
+    const btnPan = document.createElement('button')
+    btnPan.className = 'toolbar-btn'
+    btnPan.setAttribute('aria-pressed', 'false')
+    btnPan.title = 'Режим панорамирования (пробел)'
+    btnPan.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+      aria-hidden="true"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3"
+      /><path d="M2 12h20M12 2v20"/></svg> Пан`
+    el.appendChild(btnPan)
 
-  // --- Поток (DataFlow toggle)
-  const btnDf = document.createElement('button')
-  btnDf.className = 'toolbar-btn'
-  btnDf.title = 'Режим потока данных'
-  btnDf.setAttribute('aria-pressed', 'false')
-  btnDf.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-    aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Поток `
-  const lbl = document.createElement('span')
-  lbl.className = 'toolbar-df-label'
-  lbl.style.cssText = 'font-size:var(--text-xs);color:var(--color-text-faint);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
-  btnDf.appendChild(lbl)
-  el.appendChild(btnDf)
+    const sep1 = document.createElement('div')
+    sep1.className = 'toolbar-sep'
+    sep1.setAttribute('aria-hidden', 'true')
+    el.appendChild(sep1)
 
-  // ⟳ Следующий путь
-  const btnNext = document.createElement('button')
-  btnNext.className = 'toolbar-btn'
-  btnNext.title = 'Следующий путь потока данных'
-  btnNext.setAttribute('aria-label', 'Следующий путь')
-  btnNext.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-    aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`
-  el.appendChild(btnNext)
+    // --- Поток (DataFlow toggle)
+    const btnDf = document.createElement('button')
+    btnDf.className = 'toolbar-btn'
+    btnDf.title = 'Режим потока данных'
+    btnDf.setAttribute('aria-pressed', 'false')
+    btnDf.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+      aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Поток `
+    const dfLbl = document.createElement('span')
+    dfLbl.style.cssText = 'font-size:var(--text-xs);color:var(--color-text-faint);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+    btnDf.appendChild(dfLbl)
+    el.appendChild(btnDf)
 
-  // --- Разделитель
-  const sep2 = document.createElement('div')
-  sep2.className = 'toolbar-sep'
-  sep2.setAttribute('aria-hidden', 'true')
-  el.appendChild(sep2)
+    // ⟳ Следующий путь
+    const btnNext = document.createElement('button')
+    btnNext.className = 'toolbar-btn'
+    btnNext.title = 'Следующий путь'
+    btnNext.setAttribute('aria-label', 'Следующий путь')
+    btnNext.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+      aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`
+    el.appendChild(btnNext)
 
-  // --- Раскладка (Layout cycle)
-  const btnLayout = document.createElement('button')
-  btnLayout.className = 'toolbar-btn'
-  btnLayout.title = 'Сменить раскладку'
-  btnLayout.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-    aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-    <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Раскладка`
-  el.appendChild(btnLayout)
+    const sep2 = document.createElement('div')
+    sep2.className = 'toolbar-sep'
+    sep2.setAttribute('aria-hidden', 'true')
+    el.appendChild(sep2)
 
-  container.appendChild(el)
+    // --- Раскладка (Layout cycle)
+    const btnLayout = document.createElement('button')
+    btnLayout.className = 'toolbar-btn'
+    btnLayout.title = 'Сменить раскладку'
+    btnLayout.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+      aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+      <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Раскладка`
+    el.appendChild(btnLayout)
 
-  // ---- Логика ----
-  let _dfActive = false
-  let _layoutIdx = 0
+    container.appendChild(el)
 
-  btnPan.addEventListener('click', () => {
-    const pressed = btnPan.getAttribute('aria-pressed') === 'true'
-    btnPan.setAttribute('aria-pressed', String(!pressed))
-    btnPan.classList.toggle('toolbar-btn--active', !pressed)
-    emit('cy:pan-mode', !pressed as any)
-  })
+    // ---- Логика ----
+    let _dfActive = false
+    let _layoutIdx = 0
 
-  btnDf.addEventListener('click', () => {
-    _dfActive = !_dfActive
-    btnDf.setAttribute('aria-pressed', String(_dfActive))
-    btnDf.classList.toggle('toolbar-btn--active', _dfActive)
-    emit('dataflow:toggle', _dfActive as any)
-  })
+    btnPan.addEventListener('click', () => {
+      const pressed = btnPan.getAttribute('aria-pressed') === 'true'
+      btnPan.setAttribute('aria-pressed', String(!pressed))
+      btnPan.classList.toggle('toolbar-btn--active', !pressed)
+      emit('cy:pan-mode', !pressed as any)
+    })
 
-  btnNext.addEventListener('click', () => {
-    emit('dataflow:next', undefined as any)
-  })
+    btnDf.addEventListener('click', () => {
+      _dfActive = !_dfActive
+      btnDf.setAttribute('aria-pressed', String(_dfActive))
+      btnDf.classList.toggle('toolbar-btn--active', _dfActive)
+      emit('dataflow:toggle', _dfActive as any)
+    })
 
-  btnLayout.addEventListener('click', () => {
-    _layoutIdx = (_layoutIdx + 1) % LAYOUTS.length
-    const layout = LAYOUTS[_layoutIdx]
-    btnLayout.querySelector('svg')!.nextSibling!.textContent = ` ${LAYOUT_LABELS[layout]}`
-    emit('cy:layout', layout as any)
-  })
+    btnNext.addEventListener('click', () => {
+      emit('dataflow:next', undefined as any)
+    })
 
-  // Синхронизация при смене пути изнутри DataFlowMode
-  on('dataflow:toggle', (enabled) => {
-    _dfActive = enabled as unknown as boolean
-    btnDf.setAttribute('aria-pressed', String(_dfActive))
-    btnDf.classList.toggle('toolbar-btn--active', _dfActive)
-  })
+    btnLayout.addEventListener('click', () => {
+      _layoutIdx = (_layoutIdx + 1) % LAYOUTS.length
+      const layout = LAYOUTS[_layoutIdx]!
+      const textNode = btnLayout.childNodes[btnLayout.childNodes.length - 1]
+      if (textNode) textNode.textContent = ` ${LAYOUT_LABELS[layout]}`
+      emit('cy:layout', layout as any)
+    })
 
-  on('dataflow:path:changed', (name) => {
-    lbl.textContent = _dfActive ? ` ${name as string}` : ''
-  })
+    on('dataflow:toggle', (enabled) => {
+      _dfActive = enabled as unknown as boolean
+      btnDf.setAttribute('aria-pressed', String(_dfActive))
+      btnDf.classList.toggle('toolbar-btn--active', _dfActive)
+    })
+
+    on('dataflow:path:changed', (name) => {
+      dfLbl.textContent = _dfActive ? ` ${name as string}` : ''
+    })
+
+    return {
+      setDataflow(active: boolean) {
+        _dfActive = active
+        btnDf.setAttribute('aria-pressed', String(active))
+        btnDf.classList.toggle('toolbar-btn--active', active)
+        if (!active) dfLbl.textContent = ''
+      },
+      syncDataflowPath(idx: number) {
+        dfLbl.textContent = _dfActive ? ` Путь ${idx + 1}` : ''
+      },
+    }
+  },
 }

@@ -1,5 +1,7 @@
 /**
  * Legend — glassmorphism pill снизу слева: Сервис · БД · Кэш
+ *
+ * Экспорт: `export const Legend = { mount(container) }`
  */
 
 const CSS = `
@@ -23,21 +25,18 @@ const CSS = `
   align-items: center;
   gap: var(--space-2, 0.5rem);
 }
-/* Сервис — скруглённый прямоугольник */
 .legend-shape--service {
   width: 14px; height: 14px;
   border-radius: var(--radius-sm, 0.375rem);
   background: var(--color-primary);
   flex-shrink: 0;
 }
-/* БД — эллипс */
 .legend-shape--database {
   width: 14px; height: 10px;
   border-radius: 50%;
   background: var(--color-blue, #006494);
   flex-shrink: 0;
 }
-/* Кэш — hexagon (CSS clip-path) */
 .legend-shape--cache {
   width: 12px; height: 14px;
   background: var(--color-purple, #7a39bb);
@@ -52,34 +51,33 @@ const ITEMS = [
   { cls: 'legend-shape--cache',    label: 'Кэш'     },
 ]
 
-function _injectCss(): void {
-  if (document.getElementById('legend-css')) return
-  const s = document.createElement('style')
-  s.id = 'legend-css'
-  s.textContent = CSS
-  document.head.appendChild(s)
-}
+export const Legend = {
+  mount(container: HTMLElement): void {
+    if (!document.getElementById('legend-css')) {
+      const s = document.createElement('style')
+      s.id = 'legend-css'
+      s.textContent = CSS
+      document.head.appendChild(s)
+    }
 
-export function mountLegend(container: HTMLElement): void {
-  _injectCss()
+    const el = document.createElement('div')
+    el.className = 'legend'
+    el.setAttribute('aria-label', 'Легенда типов узлов')
+    el.setAttribute('role', 'img')
 
-  const el = document.createElement('div')
-  el.className = 'legend'
-  el.setAttribute('aria-label', 'Легенда типов узлов')
-  el.setAttribute('role', 'img')
+    for (const item of ITEMS) {
+      const wrap = document.createElement('div')
+      wrap.className = 'legend-item'
+      const shape = document.createElement('div')
+      shape.className = `legend-shape ${item.cls}`
+      shape.setAttribute('aria-hidden', 'true')
+      const lbl = document.createElement('span')
+      lbl.textContent = item.label
+      wrap.appendChild(shape)
+      wrap.appendChild(lbl)
+      el.appendChild(wrap)
+    }
 
-  for (const item of ITEMS) {
-    const wrap = document.createElement('div')
-    wrap.className = 'legend-item'
-    const shape = document.createElement('div')
-    shape.className = `legend-shape ${item.cls}`
-    shape.setAttribute('aria-hidden', 'true')
-    const lbl = document.createElement('span')
-    lbl.textContent = item.label
-    wrap.appendChild(shape)
-    wrap.appendChild(lbl)
-    el.appendChild(wrap)
-  }
-
-  container.appendChild(el)
+    container.appendChild(el)
+  },
 }
