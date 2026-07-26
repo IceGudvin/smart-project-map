@@ -1,212 +1,181 @@
 /**
- * CanvasToolbar — glassmorphism pill по центру сверху (под StatsBar).
- * Кнопки: Pan | DataFlow [имя пути] ⟳ Next | Layout
+ * CanvasToolbar.ts — Панель инструментов канваса.
  *
- * dataflow:toggle теперь не оркестрирует подсветку —
+ * Кнопки: Пан | Поток [имя пути] ⟳ Далее | Раскладка
+ *
+ * Переключение режима DataFlow и смена пути —
  * это делает DataFlowMode.ts.
- * CanvasToolbar только обновляет свой UI-статус.
  */
-import { emit, on } from '../../lib/eventBus.js';
-import { store, DATAFLOW_PATHS, type DataflowPathIndex } from '../../store.js';
 
+import { on, emit } from '../../lib/eventBus.js'
+
+// ---- CSS ----
 const CSS = `
 .canvas-toolbar {
-  position: absolute;
-  top: calc(var(--space-3) + 36px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 20;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1);
-  border-radius: var(--radius-full);
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  gap: var(--space-1, 0.25rem);
+  padding: var(--space-1, 0.25rem) var(--space-2, 0.5rem);
+  border-radius: var(--radius-full, 9999px);
+  background: var(--glass-bg, oklch(from var(--color-surface) l c h / 0.85));
+  border: 1px solid var(--glass-border, oklch(from var(--color-border) l c h / 0.5));
+  box-shadow: var(--glass-shadow, var(--shadow-md));
+  backdrop-filter: blur(var(--glass-blur, 12px)) saturate(var(--glass-saturate, 1.6));
+  user-select: none;
 }
 .toolbar-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-full);
-  border: none;
-  background: transparent;
-  font-family: var(--font-body);
-  font-size: var(--text-xs);
+  gap: var(--space-1, 0.25rem);
+  padding: var(--space-1, 0.25rem) var(--space-3, 0.75rem);
+  height: 28px;
+  border-radius: var(--radius-full, 9999px);
+  font-size: var(--text-xs, 0.75rem);
   font-weight: 500;
   color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
   cursor: pointer;
-  transition: background var(--transition-interactive), color var(--transition-interactive);
+  transition: color 150ms, background 150ms, border-color 150ms;
   white-space: nowrap;
 }
 .toolbar-btn:hover {
-  background: color-mix(in oklab, var(--color-primary) 10%, transparent);
   color: var(--color-text);
+  background: var(--color-surface-offset);
+  border-color: var(--color-border);
 }
+.toolbar-btn:active { background: var(--color-surface-dynamic); }
 .toolbar-btn--active {
-  background: color-mix(in oklab, var(--color-primary) 18%, transparent);
   color: var(--color-primary);
-}
-.toolbar-btn:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+  background: oklch(from var(--color-primary) l c h / 0.1);
+  border-color: oklch(from var(--color-primary) l c h / 0.3);
 }
 .toolbar-sep {
-  width: 1px; height: 20px;
-  background: var(--glass-border);
+  width: 1px; height: 16px;
+  background: var(--color-border);
   flex-shrink: 0;
+  margin: 0 var(--space-1, 0.25rem);
 }
-.toolbar-btn__path {
-  font-size: var(--text-xs);
-  opacity: 0.75;
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: opacity 0.15s ease;
-}
-`;
+`
 
-function inject() {
-  if (document.getElementById('canvas-toolbar-css')) return;
-  const s = document.createElement('style');
-  s.id = 'canvas-toolbar-css';
-  s.textContent = CSS;
-  document.head.appendChild(s);
+type Layout = 'dagre' | 'cose' | 'grid'
+const LAYOUTS: Layout[] = ['dagre', 'cose', 'grid']
+const LAYOUT_LABELS: Record<Layout, string> = {
+  dagre: 'Дерево',
+  cose:  'Граф',
+  grid:  'Сетка',
 }
 
-const LAYOUTS = ['TB', 'LR'] as const;
-type Layout = typeof LAYOUTS[number];
-let _layoutIdx = 0;
+export function mountCanvasToolbar(container: HTMLElement): void {
+  // inject CSS once
+  if (!document.getElementById('canvas-toolbar-css')) {
+    const s = document.createElement('style')
+    s.id = 'canvas-toolbar-css'
+    s.textContent = CSS
+    document.head.appendChild(s)
+  }
 
-export const CanvasToolbar = {
-  _btnDataflow: null as HTMLButtonElement | null,
-  _pathLabel:   null as HTMLElement | null,
-  _dfActive:    false,
+  const el = document.createElement('div')
+  el.className = 'canvas-toolbar'
+  el.setAttribute('role', 'toolbar')
+  el.setAttribute('aria-label', 'Инструменты канваса')
 
-  mount(parent: HTMLElement) {
-    inject();
+  // --- Пан
+  const btnPan = document.createElement('button')
+  btnPan.className = 'toolbar-btn'
+  btnPan.setAttribute('aria-pressed', 'false')
+  btnPan.title = 'Режим панорамирования (пробел)'
+  btnPan.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+    aria-hidden="true"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3"
+    /><path d="M2 12h20M12 2v20"/></svg> Пан`
+  el.appendChild(btnPan)
 
-    const el = document.createElement('div');
-    el.className = 'canvas-toolbar';
-    el.setAttribute('role', 'toolbar');
-    el.setAttribute('aria-label', 'Инструменты канваса');
+  // --- Разделитель
+  const sep1 = document.createElement('div')
+  sep1.className = 'toolbar-sep'
+  sep1.setAttribute('aria-hidden', 'true')
+  el.appendChild(sep1)
 
-    // --- Pan
-    const btnPan = document.createElement('button');
-    btnPan.className = 'toolbar-btn';
-    btnPan.setAttribute('aria-pressed', 'false');
-    btnPan.title = 'Режим панорамирования (пробел)';
-    btnPan.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" stroke-width="2">
-      <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3"/>
-      <path d="M2 12h20M12 2v20"/>
-    </svg> Pan`;
-    el.appendChild(btnPan);
+  // --- Поток (DataFlow toggle)
+  const btnDf = document.createElement('button')
+  btnDf.className = 'toolbar-btn'
+  btnDf.title = 'Режим потока данных'
+  btnDf.setAttribute('aria-pressed', 'false')
+  btnDf.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+    aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Поток `
+  const lbl = document.createElement('span')
+  lbl.className = 'toolbar-df-label'
+  lbl.style.cssText = 'font-size:var(--text-xs);color:var(--color-text-faint);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+  btnDf.appendChild(lbl)
+  el.appendChild(btnDf)
 
-    el.appendChild(_sep());
+  // ⟳ Следующий путь
+  const btnNext = document.createElement('button')
+  btnNext.className = 'toolbar-btn'
+  btnNext.title = 'Следующий путь потока данных'
+  btnNext.setAttribute('aria-label', 'Следующий путь')
+  btnNext.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+    aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`
+  el.appendChild(btnNext)
 
-    // --- DataFlow toggle
-    const btnDf = document.createElement('button');
-    btnDf.className = 'toolbar-btn';
-    btnDf.setAttribute('aria-pressed', 'false');
-    btnDf.title = 'DataFlow-режим';
-    const pathLabel = document.createElement('span');
-    pathLabel.className = 'toolbar-btn__path';
-    btnDf.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" stroke-width="2">
-      <path d="M12 2l9 4.5V18L12 22l-9-5.5V6.5z"/>
-      <path d="M12 22V12M3 6.5l9 5.5 9-5.5"/>
-    </svg> DataFlow `;
-    btnDf.appendChild(pathLabel);
-    this._btnDataflow = btnDf;
-    this._pathLabel   = pathLabel;
-    el.appendChild(btnDf);
+  // --- Разделитель
+  const sep2 = document.createElement('div')
+  sep2.className = 'toolbar-sep'
+  sep2.setAttribute('aria-hidden', 'true')
+  el.appendChild(sep2)
 
-    // ⟳ Next path
-    const btnNext = document.createElement('button');
-    btnNext.className = 'toolbar-btn';
-    btnNext.title = 'Следующий DataFlow-путь';
-    btnNext.setAttribute('aria-label', 'Следующий путь');
-    btnNext.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" stroke-width="2.5">
-      <path d="M5 12h14M13 6l6 6-6 6"/>
-    </svg>`;
-    el.appendChild(btnNext);
+  // --- Раскладка (Layout cycle)
+  const btnLayout = document.createElement('button')
+  btnLayout.className = 'toolbar-btn'
+  btnLayout.title = 'Сменить раскладку'
+  btnLayout.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+    aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+    <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Раскладка`
+  el.appendChild(btnLayout)
 
-    el.appendChild(_sep());
+  container.appendChild(el)
 
-    // --- Layout cycle
-    const btnLayout = document.createElement('button');
-    btnLayout.className = 'toolbar-btn';
-    btnLayout.title = 'Сменить разкладку';
-    btnLayout.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" stroke-width="2">
-      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-      <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
-    </svg> Layout`;
-    el.appendChild(btnLayout);
+  // ---- Логика ----
+  let _dfActive = false
+  let _layoutIdx = 0
 
-    parent.appendChild(el);
+  btnPan.addEventListener('click', () => {
+    const pressed = btnPan.getAttribute('aria-pressed') === 'true'
+    btnPan.setAttribute('aria-pressed', String(!pressed))
+    btnPan.classList.toggle('toolbar-btn--active', !pressed)
+    emit('cy:pan-mode', !pressed as any)
+  })
 
-    // --- Handlers
+  btnDf.addEventListener('click', () => {
+    _dfActive = !_dfActive
+    btnDf.setAttribute('aria-pressed', String(_dfActive))
+    btnDf.classList.toggle('toolbar-btn--active', _dfActive)
+    emit('dataflow:toggle', _dfActive as any)
+  })
 
-    btnPan.addEventListener('click', () => {
-      const pressed = btnPan.getAttribute('aria-pressed') === 'true';
-      btnPan.setAttribute('aria-pressed', String(!pressed));
-      btnPan.classList.toggle('toolbar-btn--active', !pressed);
-      emit('canvas:pan-mode', !pressed);
-    });
+  btnNext.addEventListener('click', () => {
+    emit('dataflow:next', undefined as any)
+  })
 
-    btnDf.addEventListener('click', () => {
-      this._dfActive = !this._dfActive;
-      // DataFlowMode.ts слушает и делает всю работу
-      emit('dataflow:toggle', this._dfActive);
-      this._syncDfBtn();
-    });
+  btnLayout.addEventListener('click', () => {
+    _layoutIdx = (_layoutIdx + 1) % LAYOUTS.length
+    const layout = LAYOUTS[_layoutIdx]
+    btnLayout.querySelector('svg')!.nextSibling!.textContent = ` ${LAYOUT_LABELS[layout]}`
+    emit('cy:layout', layout as any)
+  })
 
-    btnNext.addEventListener('click', () => {
-      if (!store.dataflowMode) return;
-      emit('dataflow:next', undefined);
-    });
+  // Синхронизация при смене пути изнутри DataFlowMode
+  on('dataflow:toggle', (enabled) => {
+    _dfActive = enabled as unknown as boolean
+    btnDf.setAttribute('aria-pressed', String(_dfActive))
+    btnDf.classList.toggle('toolbar-btn--active', _dfActive)
+  })
 
-    btnLayout.addEventListener('click', () => {
-      _layoutIdx = (_layoutIdx + 1) % LAYOUTS.length;
-      emit('graph:layout', LAYOUTS[_layoutIdx]);
-    });
-
-    // Синхронизация при смене пути изнутри DataFlowMode
-    on('dataflow:toggle', (active) => {
-      this._dfActive = active;
-      this._syncDfBtn();
-    });
-
-    return this;
-  },
-
-  _syncDfBtn(): void {
-    const btn = this._btnDataflow;
-    const lbl = this._pathLabel;
-    if (!btn) return;
-    btn.setAttribute('aria-pressed', String(this._dfActive));
-    btn.classList.toggle('toolbar-btn--active', this._dfActive);
-    if (lbl) {
-      const idx = store.activeDataflowPath as DataflowPathIndex;
-      lbl.textContent = this._dfActive
-        ? DATAFLOW_PATHS[idx]
-        : '';
-    }
-  },
-
-  /** Вызывается из AppShell при смене пути */
-  syncPathLabel(): void {
-    this._syncDfBtn();
-  },
-};
-
-function _sep(): HTMLElement {
-  return Object.assign(document.createElement('div'), { className: 'toolbar-sep' });
+  on('dataflow:path:changed', (name) => {
+    lbl.textContent = _dfActive ? ` ${name as string}` : ''
+  })
 }
