@@ -5,7 +5,7 @@
 
 import type { Language, Framework, HttpMethod } from './graph.js'
 
-// ─── Raw route (before schema linking) ───────────────────────────────────────
+// ─── Raw route (before schema linking) ────────────────────────────────────────
 
 export interface RawRoute {
   method: HttpMethod
@@ -20,19 +20,23 @@ export interface RawRoute {
   line: number
 }
 
-// ─── Raw HTTP call (outgoing request from this service) ──────────────────────
+// ─── Raw HTTP call (outgoing request from this service) ────────────────────
 
 export interface RawHttpCall {
   /** Resolved URL string (env vars expanded when possible) */
   url: string
-  method?: HttpMethod
+  /**
+   * HTTP method. Defaults to 'GET' when the method cannot be statically determined
+   * (e.g. bare fetch() without options, or dynamic method variable).
+   */
+  method: HttpMethod
   /** Hint for resolver — the service name or hostname extracted from URL */
   targetServiceHint?: string
   file: string
   line: number
 }
 
-// ─── Raw schema (before cross-service linking) ───────────────────────────────
+// ─── Raw schema (before cross-service linking) ───────────────────────────
 
 export interface RawSchemaField {
   name: string
@@ -48,7 +52,7 @@ export interface RawSchema {
   line: number
 }
 
-// ─── Environment / config entry ──────────────────────────────────────────────
+// ─── Environment / config entry ──────────────────────────────────────────
 
 export interface EnvEntry {
   key: string
@@ -57,7 +61,7 @@ export interface EnvEntry {
   resolvedServiceId?: string
 }
 
-// ─── Top-level parser output ─────────────────────────────────────────────────
+// ─── Top-level parser output ───────────────────────────────────────────────
 
 export interface RawParserOutput {
   /** Absolute path to the service root directory */
