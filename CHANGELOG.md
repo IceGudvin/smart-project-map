@@ -1,3 +1,34 @@
+## [2026-07-26] — ProjectPicker: выбор проекта через UI (Issue #6)
+
+### Добавлено
+- `layer-4-ui/src/components/ProjectPicker/index.ts` — модальный экран выбора проекта:
+  - Поле ввода пути с placeholder для Windows/Unix
+  - Кнопка «Открыть» → `POST /server/start { projectDir }`
+  - Список недавних проектов (до 5, localStorage)
+  - Анимированное появление/скрытие
+  - Закрытие по Escape / кнопке «Пропустить»
+  - Статусы: подключение / ошибка / успех
+- `layer-3-server/src/routes/project.ts` — два новых маршрута:
+  - `POST /server/start` — принимает `{ projectDir }`, валидирует путь, переключает scanner, запускает сканирование, рассылает `graph:full` по WS
+  - `GET /server/status` — текущий `projectDir` + краткая статистика графа
+- `layer-3-server/src/scanner.ts` — рефакторинг: `setProjectDir()`, `getCachedGraph()`, `runScan()` как отдельный модуль
+- `layer-3-server/src/index.ts` — `--project` теперь необязательный; без него сервер стартует и ждёт `POST /server/start`
+
+### Изменено
+- `eventBus.ts` — добавлены события:
+  - `ws:status: 'connecting' | 'connected' | 'disconnected'`
+  - `project:pick:show` — wsClient эмитит при первом неудачном подключении
+  - `project:changed(path)` — после успешного выбора проекта в UI
+- `wsClient.ts` — после первого неудачного `connect` эмитит `project:pick:show`
+- `AppShell/index.ts` — монтирует `ProjectPicker`; при `project:changed` перепедключает WS через 1с
+
+### Зафиксировано в репо
+- Коммит: `44aba46` — ProjectPicker + routes/project.ts + scanner.ts + index.ts + wsClient.ts
+- Коммит: `1e126d5` — wire ProjectPicker в AppShell + eventBus
+- Roadmap Issue #6 — чекбокс 📂 ProjectPicker отмечен ✅
+
+---
+
 ## [2026-07-26] — Русификация UI + фиксы экспортов + SVG-иконки Legend (Issue #6)
 
 ### Добавлено
