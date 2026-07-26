@@ -1,35 +1,22 @@
-import './styles/index.css'
-import { initStore } from './store'
-import { AppShell } from './components/AppShell'
-import { wsClient } from './lib/wsClient'
-import { eventBus } from './lib/eventBus'
-import type { GraphData } from '../../shared/types'
-
 /**
- * Точка входа layer-4-ui.
- * Порядок инициализации:
- *   1. store — реактивное состояние
- *   2. AppShell — монтирование UI в #app
- *   3. wsClient — подключение к layer-3-server по WS
- *   4. eventBus — подписка на graph:update → обновление store
+ * main.ts — Точка входа layer-4-ui.
+ *
+ * Порядок запуска:
+ *   1. Импорт стилей
+ *   2. AppShell.mount() — строит DOM, подписывается на eventBus,
+ *      запускает wsClient внутри.
+ *
+ * AppShell владеет всей оркестрацией — main.ts только монтирует его.
  */
 
-async function bootstrap(): Promise<void> {
-  const store = initStore()
+import './styles/index.css'
+import { AppShell } from './components/AppShell/index.js'
 
-  const shell = new AppShell(document.getElementById('app')!, store)
-  shell.mount()
+const appEl = document.getElementById('app')
+if (!appEl) throw new Error('[main] #app element not found')
 
-  wsClient.connect(import.meta.env.VITE_WS_URL ?? 'ws://localhost:3000')
+const shell = new AppShell(appEl)
+shell.mount()
 
-  eventBus.on('graph:update', (data: GraphData) => {
-    store.setGraph(data)
-    shell.refresh()
-  })
-
-  eventBus.on('ws:error', (err: unknown) => {
-    console.error('[layer-4-ui] WebSocket error', err)
-  })
-}
-
-bootstrap()
+// Доступен в DevTools для ручной отладки
+;(window as any).__shell = shell
