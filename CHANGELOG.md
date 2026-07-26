@@ -1,3 +1,32 @@
+## [2026-07-26] — Layer 4: AppShell — полная реализация (Issue #6)
+
+### Добавлено
+- `layer-4-ui/src/components/AppShell/index.ts` — **полная реализация**:
+  - `injectLayoutStyles()` — однократная инжекция CSS: `.app-shell` (flex column, 100dvh, overflow:hidden), `.app-header` (48px, glassmorphism), `.app-main` (flex row, overflow:hidden), `.app-sidebar` (260px fixed, collapse до 48px), `.app-canvas-wrap` (flex:1, position:relative), `.app-detail-panel` (absolute overlay), `.app-edge-tooltip` (fixed, pointer-events:none)
+  - `mount()`: строит DOM (header/aside/canvas-wrap), монтирует все дочерние компоненты, вызывает `connectWs()`, подписывается на все eventBus-события, вешает `Escape → node:deselect`
+  - `destroy()`: отписки + `disconnectWs()`
+  - `_bindEvents()` — полная оркестрация:
+    - `cy:ready` → сохраняет `Core`-инстанс
+    - `graph:full` → `syncGraph(cy, graph, isDark)` + sidebar/header update
+    - `graph:update` → `syncGraph(cy, store.graph, isDark)` + sidebar/header update
+    - `graph:refresh` → `fetch('/graph')` HTTP fallback
+    - `node:select` → `store.selectNode`, `highlightSelected(cy)`, `detailPanel.show`, `sidebar.setActive`
+    - `node:deselect` → `store.selectNode(null)`, `clearDataflowHighlight(cy)`, `detailPanel.hide`, `sidebar.setActive(null)`
+    - `dataflow:toggle` → `store.setDataflowMode`, `applyDataflowHighlight/clearDataflowHighlight`, `startDashAnimation/stopDashAnimation`
+    - `dataflow:next` → `store.nextDataflowPath`, `applyDataflowHighlight(cy, newIndex)`
+    - `theme:changed` → `store.setTheme`, `updateTheme(cy, isDark)`
+- `layer-4-ui/src/main.ts` — упрощён: только `new AppShell(appEl).mount()`, `window.__shell` для DevTools; вся оркестрация перенесена в AppShell
+
+### Изменено
+- `AppShell` больше не принимает `store` в конструктор — использует singleton `store` напрямую (согласовано с `store.ts`)
+- `main.ts` не содержит прямых вызовов `wsClient.connect` и ручных подписок `eventBus` — всё внутри AppShell
+
+### Зафиксировано в репо
+- Roadmap Issue #6 — чекбоксы 🏗 AppShell отмечены ✅
+- Коммит: `1676593`
+
+---
+
 ## [2026-07-26] — Layer 4: cytoscapeInit + nodeData — полная реализация (Issue #6)
 
 ### Добавлено
