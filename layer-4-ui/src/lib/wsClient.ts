@@ -1,171 +1,125 @@
 /**
- * wsClient.ts — WebSocket-клиент для layer-4-ui.
+ * wsClient.ts — WebSocket-клиент для layer-3-server.
  *
- * Подключается к ws://localhost:3001/ws (layer-3-server).
+ * Протокол сообщений (входящие):
+ *   { type: 'graph:full',  payload: GraphModel }  — полный снимок
+ *   { type: 'graph:patch', payload: GraphDiff  }  — инкрементальный дифф
  *
- * Обработка входящих сообщений (протокол WsEvent из shared/src/events.ts):
- *   graph:full   — полный снимок графа при подключении
- *   graph:update — инкрементальный diff при изменении файла
- *   graph:error  — ошибка парсинга/билда
- *   ping         — кипалив (отвечаем pong)
+ * Логика переподключения:
+ *   - 3 попытки с backoff 1s / 2s / 4s
+ *   - После 3 неудач — emit('ws:status', 'disconnected')
  *
- * Реконнект: экспоненциальный backoff, макс. 10 попыток, jitter.
- * Фоллбэк: если graph:full не пришёл за 2с — запрос GET /graph через eventBus.
+ * Фоллбэк:
+ *   - Если graph:full не пришёл за 2с после open — emit('graph:refresh')
+ *     → AppShell делает GET /graph
+ *
+ * Показ ProjectPicker:
+ *   - Если ws не смог подключиться ни разу (первый connect упал) — emit('project:pick:show')
  */
 
-import type { WsEvent as SharedWsEvent } from '../../../shared/src/events.js'
 import { emit } from './eventBus.js'
 import { store } from '../store.js'
 
-// ----------------------------------------------------------------- config
+const WS_URL = `ws://${location.host}/ws`
+const FALLBACK_TIMEOUT_MS = 2000
+const RECONNECT_DELAYS = [1000, 2000, 4000]
 
-const WS_URL          = 'ws://localhost:3001/ws'
-const MAX_RETRIES     = 10
-const BASE_DELAY_MS   = 1000
-const MAX_DELAY_MS    = 30_000
-/** Таймаут: если graph:full не пришёл за X мс после open — фоллбэк HTTP */
-const FULL_TIMEOUT_MS = 2_000
+let _ws: WebSocket | null = null
+let _reconnectAttempt = 0
+let _fallbackTimer: ReturnType<typeof setTimeout> | null = null
+let _graphReceived = false
+let _everConnected = false
+let _stopped = false
 
-// ----------------------------------------------------------------- state
-
-let ws:             WebSocket | null  = null
-let retryCount:     number            = 0
-let retryTimer:     ReturnType<typeof setTimeout> | null = null
-let fullTimer:      ReturnType<typeof setTimeout> | null = null
-let destroyed:      boolean           = false
-
-// ----------------------------------------------------------------- public API
-
-/** Запустить подключение. Вызывается из AppShell при mount. */
 export function connectWs(): void {
-  destroyed   = false
-  retryCount  = 0
-  doConnect()
+  _stopped = false
+  _connect()
 }
 
-/** Навсегда закрыть соединение (без реконнекта). */
 export function disconnectWs(): void {
-  destroyed = true
-  clearTimers()
-  if (ws) {
-    ws.onclose = null
-    ws.close()
-    ws = null
+  _stopped = true
+  _clearFallback()
+  if (_ws) {
+    _ws.onclose = null
+    _ws.close()
+    _ws = null
   }
-  store.setWsStatus('disconnected')
-  emit('ws:disconnected', undefined)
+  emit('ws:status', 'disconnected')
 }
 
-/** true если WS в состоянии OPEN. */
-export function isConnected(): boolean {
-  return ws !== null && ws.readyState === WebSocket.OPEN
-}
+function _connect(): void {
+  if (_stopped) return
 
-// ----------------------------------------------------------------- internals
+  emit('ws:status', 'connecting')
 
-function doConnect(): void {
-  if (destroyed) return
+  _ws = new WebSocket(WS_URL)
 
-  store.setWsStatus('connecting')
-  ws = new WebSocket(WS_URL)
+  _ws.onopen = () => {
+    _reconnectAttempt = 0
+    _everConnected = true
+    emit('ws:status', 'connected')
+    _graphReceived = false
 
-  ws.onopen = handleOpen
-  ws.onmessage = handleMessage
-  ws.onerror = handleError
-  ws.onclose = handleClose
-}
-
-function handleOpen(): void {
-  retryCount = 0
-  store.setWsStatus('connected')
-  emit('ws:connected', undefined)
-
-  // Фоллбэк: если graph:full не пришёл за FULL_TIMEOUT_MS — сигнализируем graph:refresh
-  fullTimer = setTimeout(() => {
-    if (isConnected() && store.graph.nodes.length === 0) {
-      console.warn('[wsClient] graph:full not received, triggering HTTP fallback')
-      emit('graph:refresh', undefined)
-    }
-  }, FULL_TIMEOUT_MS)
-}
-
-function handleMessage(event: MessageEvent): void {
-  let msg: SharedWsEvent
-  try {
-    msg = JSON.parse(event.data as string) as SharedWsEvent
-  } catch {
-    console.warn('[wsClient] Failed to parse WS message')
-    return
-  }
-
-  switch (msg.type) {
-    case 'graph:full':
-      if (fullTimer) { clearTimeout(fullTimer); fullTimer = null }
-      store.setGraph(msg.data)
-      emit('graph:full', msg.data)
-      break
-
-    case 'graph:update':
-      store.applyDiff(msg.diff)
-      emit('graph:update', { diff: msg.diff, changedAt: msg.changedAt })
-      break
-
-    case 'graph:error':
-      console.warn('[wsClient] Server error:', msg.message, msg.filePath ?? '')
-      store.setWsStatus('error')
-      emit('graph:error', msg.message)
-      break
-
-    case 'ping':
-      // Отвечаем pong если канал ещё открыт
-      if (ws?.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'pong' }))
+    // Фоллбэк: если graph:full не пришёл за 2с — HTTP GET /graph
+    _fallbackTimer = setTimeout(() => {
+      if (!_graphReceived) {
+        console.warn('[wsClient] graph:full not received in 2s — falling back to GET /graph')
+        emit('graph:refresh', undefined)
       }
-      break
-
-    default:
-      console.warn('[wsClient] Unknown message type:', (msg as any).type)
+    }, FALLBACK_TIMEOUT_MS)
   }
-}
 
-function handleError(err: Event): void {
-  console.warn('[wsClient] WebSocket error:', err)
-  store.setWsStatus('error')
-  emit('ws:error', err)
-}
-
-function handleClose(): void {
-  ws = null
-  if (!destroyed) {
-    store.setWsStatus('disconnected')
-    emit('ws:disconnected', undefined)
-    scheduleReconnect()
-  }
-}
-
-function scheduleReconnect(): void {
-  if (destroyed || retryCount >= MAX_RETRIES) {
-    if (retryCount >= MAX_RETRIES) {
-      console.warn('[wsClient] Max retries reached. Manual reconnect required.')
+  _ws.onmessage = (event) => {
+    let msg: { type: string; payload: unknown }
+    try {
+      msg = JSON.parse(event.data as string)
+    } catch {
+      console.warn('[wsClient] invalid JSON:', event.data)
+      return
     }
-    return
+
+    if (msg.type === 'graph:full') {
+      _clearFallback()
+      _graphReceived = true
+      store.setGraph(msg.payload as Parameters<typeof store.setGraph>[0])
+      emit('graph:full', store.graph)
+      return
+    }
+
+    if (msg.type === 'graph:patch') {
+      store.applyDiff(msg.payload as Parameters<typeof store.applyDiff>[0])
+      emit('graph:update', store.graph)
+      return
+    }
+
+    console.debug('[wsClient] unknown message type:', msg.type)
   }
 
-  // Экспоненциальный backoff с jitter: delay = min(base * 2^n, max) + rand(0..500)
-  const exp   = BASE_DELAY_MS * Math.pow(2, retryCount)
-  const delay = Math.min(exp, MAX_DELAY_MS) + Math.random() * 500
-  retryCount++
+  _ws.onclose = () => {
+    _clearFallback()
+    emit('ws:status', 'disconnected')
 
-  console.info(`[wsClient] Reconnecting in ${Math.round(delay)}ms (attempt ${retryCount}/${MAX_RETRIES})`)
-  store.setWsStatus('connecting')
+    if (_stopped) return
 
-  retryTimer = setTimeout(() => {
-    retryTimer = null
-    doConnect()
-  }, delay)
+    // Первый раз не смогли подключиться — показываем ProjectPicker
+    if (!_everConnected && _reconnectAttempt === 0) {
+      emit('project:pick:show', undefined)
+    }
+
+    const delay = RECONNECT_DELAYS[Math.min(_reconnectAttempt, RECONNECT_DELAYS.length - 1)]
+    _reconnectAttempt++
+    console.log(`[wsClient] reconnecting in ${delay}ms (attempt ${_reconnectAttempt})...`)
+    setTimeout(_connect, delay)
+  }
+
+  _ws.onerror = () => {
+    // onclose будет вызван следом — там обрабатываем
+  }
 }
 
-function clearTimers(): void {
-  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
-  if (fullTimer)  { clearTimeout(fullTimer);  fullTimer  = null }
+function _clearFallback(): void {
+  if (_fallbackTimer) {
+    clearTimeout(_fallbackTimer)
+    _fallbackTimer = null
+  }
 }

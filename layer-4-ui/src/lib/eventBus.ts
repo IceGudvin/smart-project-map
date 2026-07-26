@@ -50,7 +50,6 @@ export interface EventMap {
 
   /**
    * graph:rebuild:start — кнопка Refresh нажата, POST /graph/rebuild отправлен.
-   * Используется для блокировки кнопки во всех подписчиках.
    */
   'graph:rebuild:start': undefined
   /**
@@ -76,12 +75,25 @@ export interface EventMap {
   'sidebar:collapsed':   boolean
 
   // ---- WS
+  'ws:status':           'connecting' | 'connected' | 'disconnected'
   'ws:connected':        undefined
   'ws:disconnected':     undefined
   'ws:error':            Event | unknown
 
   // ---- Тема
   'theme:changed':       'dark' | 'light'
+
+  // ---- Проект
+  /**
+   * project:pick:show — wsClient эмитит когда WS не смог подключиться ни разу.
+   * ProjectPicker показывает модал.
+   */
+  'project:pick:show':   undefined
+  /**
+   * project:changed — пользователь выбрал новый проект.
+   * payload: абсолютный путь к проекту.
+   */
+  'project:changed':     string
 }
 
 export type EventKey = keyof EventMap

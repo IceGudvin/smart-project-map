@@ -2,8 +2,8 @@ import { parseProject } from '@smart-map/layer-1-parser'
 import { buildGraph, buildGraphDiff } from '@smart-map/layer-2-graph'
 import type { GraphModel, GraphDiff } from '@smart-map/shared'
 
+export let _projectDir = ''
 let _cache: GraphModel | null = null
-let _projectDir = ''
 
 export function setProjectDir(dir: string): void {
   _projectDir = dir
