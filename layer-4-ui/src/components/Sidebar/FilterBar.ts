@@ -1,41 +1,50 @@
-import type { Store } from '../../store'
-
 /**
- * FilterBar — строка поиска + чипы фильтра в шапке Sidebar.
+ * FilterBar.ts — Чипы фильтрации: All / Service / Infra.
  *
- * Фильтры: All | Service | Infra
- * При вводе в input → store.setFilter(q)
- * При клике на чип — фильтрует список по типу узла (диспатчит 'spm:filter')
+ * Монтируется в переданный внешний элемент (sb-filter-bar).
+ * При клике чипа — вызывает `onChange(filter)`.
  */
 
-export class FilterBar {
-  private store: Store
+export type FilterType = 'all' | 'service' | 'infra'
 
-  constructor(store: Store) {
-    this.store = store
+const CHIPS: Array<{ label: string; value: FilterType }> = [
+  { label: 'All',     value: 'all' },
+  { label: 'Service', value: 'service' },
+  { label: 'Infra',   value: 'infra' },
+]
+
+export class FilterBar {
+  private container: HTMLElement
+  private onChange: (filter: FilterType) => void
+  private active: FilterType = 'all'
+  private chipEls: Map<FilterType, HTMLButtonElement> = new Map()
+
+  constructor(container: HTMLElement, onChange: (filter: FilterType) => void) {
+    this.container = container
+    this.onChange = onChange
+    this._render()
   }
 
-  render(): HTMLElement {
-    const wrap = document.createElement('div')
-    wrap.innerHTML = `
-      <input class="search-input" type="text" placeholder="Поиск..." aria-label="Поиск сервисов" id="sidebar-search">
-      <div class="filter-row" role="group" aria-label="Фильтр по типу">
-        <button class="filter-chip active" data-filter="all">All</button>
-        <button class="filter-chip" data-filter="service">Service</button>
-        <button class="filter-chip" data-filter="infra">Infra</button>
-      </div>
-    `
-    wrap.querySelector('#sidebar-search')?.addEventListener('input', (e) => {
-      this.store.setFilter((e.target as HTMLInputElement).value)
-      document.dispatchEvent(new CustomEvent('spm:filter', { detail: { q: this.store.filter } }))
-    })
-    wrap.querySelectorAll('.filter-chip').forEach(btn => {
-      btn.addEventListener('click', () => {
-        wrap.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'))
-        btn.classList.add('active')
-        document.dispatchEvent(new CustomEvent('spm:filter', { detail: { type: (btn as HTMLElement).dataset.filter } }))
-      })
-    })
-    return wrap
+  private _render(): void {
+    this.container.innerHTML = ''
+    for (const { label, value } of CHIPS) {
+      const btn = document.createElement('button')
+      btn.className = 'sb-chip' + (value === this.active ? ' active' : '')
+      btn.textContent = label
+      btn.setAttribute('aria-pressed', String(value === this.active))
+      btn.addEventListener('click', () => this._select(value))
+      this.chipEls.set(value, btn)
+      this.container.appendChild(btn)
+    }
+  }
+
+  private _select(value: FilterType): void {
+    if (this.active === value) return
+    this.chipEls.get(this.active)?.classList.remove('active')
+    this.chipEls.get(this.active)?.setAttribute('aria-pressed', 'false')
+    this.active = value
+    this.chipEls.get(value)?.classList.add('active')
+    this.chipEls.get(value)?.setAttribute('aria-pressed', 'true')
+    this.onChange(value)
   }
 }
