@@ -6,6 +6,43 @@
 
 ---
 
+## [2026-07-26] — Довыливка и закрытие Layer 1: Redis-экстрактор + фикс типов
+
+Ссылка на Roadmap: [Issue #2](https://github.com/IceGudvin/smart-project-map/issues/2)
+
+### Добавлено
+- **`layer-1-parser/src/languages/variable-resolver.ts`** — мини data-flow анализатор:
+  - `buildVariableMap` — собирает прямые присваивания, `UPPER_CASE` константы, dict-пары, `settings.X` через `.env`
+  - `resolveToken` — разрешает любой аргумент функции: строка, переменная, f-строка, `settings.X`
+- **`layer-1-parser/src/languages/python.ts`** — полный Redis-экстрактор:
+  - `REDIS_CMD_RE` — универсальный паттерн для 8 команд: `rpush`, `lpush`, `xadd`, `publish`, `blpop`, `brpop`, `subscribe`, `xread`
+  - `isUnresolvedVariable` — фильтр неразрешённых переменных (`queue`, `dlq_name`, `logs_key`)
+  - Двухпроходный оркестратор: сначала `.env` + `os.environ`, затем парсинг с известными значениями
+  - HTTP: поддержка многострочных `await client.post(\n f"..."`
+
+### Изменено
+- **`shared/src/index.ts`** — исправлены экспорты: удалены несуществующие `EdgeKind`, `WsEventKind`; добавлены `NodeType`, `SchemaField`, `Schema`, `SchemaRef`, `Route`, `WsEvent*`
+- **`layer-1-parser/src/languages/typescript.ts`** — добавлено `redisCalls: []` в выходной объект (TypeScript Redis-экстрактор — следующая сессия)
+- **`SPACE_INSTRUCTIONS.md`** — добавлен раздел с шаблоном и правилами Roadmap-issue
+
+### Результаты проверки на Leadway
+
+| Сервис | language | routes | httpCalls | redis | schemas | envConfig |
+|--------|----------|--------|-----------|-------|---------|----------|
+| backend | python | 134 | 14 | 8 | 84 | 35 |
+| agent | python | 1 | 4 | 7 | 0 | 9 |
+
+### Зафиксировано в репо
+- `variable-resolver.ts` + Python Redis: [`0eedcd3`](https://github.com/IceGudvin/smart-project-map/commit/0eedcd39465536fb313356cfa28315f3d4e11d25)
+- Фильтр неразрешённых переменных: [`4a404f1`](https://github.com/IceGudvin/smart-project-map/commit/4a404f1cfeb82f5dc4b3bab2d69d81c6b791e842)
+- Фикс экспортов shared/index.ts: [`f51d713`](https://github.com/IceGudvin/smart-project-map/commit/f51d71363fee685b3ec5a515e5d2fea9c0a1942a)
+- redisCalls: [] в TS-экстракторе: [`b41c3bd`](https://github.com/IceGudvin/smart-project-map/commit/b41c3bdda1e307ce1dd59e4c70e537d0fd3adb7a)
+
+### В следующей сессии
+- **Layer 2: Graph Builder** — `RawParserOutput[]` → `GraphModel`, URL → ServiceNode, инфраструктурные узлы, Redis-ребра как Edge
+
+---
+
 ## [2026-07-26] — Реализация Layer 1: парсеры TypeScript + Python
 
 Ссылка на Roadmap: [Issue #2](https://github.com/IceGudvin/smart-project-map/issues/2)
@@ -16,38 +53,18 @@
   - `extractHttpCalls` — `fetch()` (с парсингом `options.method`), `axios.*`, `got.*`
   - `extractSchemas` — TypeScript `interface` и `type` алиасы (с `TypeLiteral`)
   - `extractEnvConfig` — `process.env.KEY` и `process.env['KEY']`
-  - `try/catch` вокруг каждого файла во всех экстракторах — один битый файл не роняет весь парсинг
 - **`layer-1-parser/src/languages/python.ts`** — полноценная реализация на regex:
   - `extractRoutes` — `@router.post/get/put/patch/delete`, `@app.post/get`
   - `extractHttpCalls` — `httpx.*`, `requests.*`
-  - `extractSchemas` — Pydantic v2 `BaseModel` классы, поля с `Optional[T]` детекцией
+  - `extractSchemas` — Pydantic v2 `BaseModel` классы
   - `extractEnvConfig` — `os.environ`, `os.getenv`, парсинг `.env` файла
-  - `try/catch` по каждому файлу
-- **`layer-1-parser/src/index.ts`** — оркестратор:
-  - `parseProject(rootDir)` — автоопределение языка по `tsconfig.json` / `package.json` / `pyproject.toml` / `requirements.txt`
-  - Маршрутизация на TypeScript или Python экстрактор
+- **`layer-1-parser/src/index.ts`** — оркестратор `parseProject(rootDir)`
 
 ### Изменено
-- **`shared/src/parser.ts`** — `RawHttpCall.method` переведён из `method?: HttpMethod` в `method: HttpMethod` (дефолт `'GET'`)
-  - Причина: `exactOptionalPropertyTypes: true` не позволяет присваивать `T | undefined` в `field?: T`
-
-### Проблемы и фиксы в ходе сессии
-- `exactOptionalPropertyTypes` с `method?: HttpMethod` — 3 цикла исправлений, решено через изменение типа в `shared/`
-
-### TODO (следующая сессия)
-- Python extractor: перейти с regex на `ast-grep` (более точный парсинг)
-- TypeScript extractor: добавить распознавание Zod/TypeBox схем
-- Ручная проверка на Leadway-проекте
+- `shared/src/parser.ts` — `RawHttpCall.method` переведён в обязательный
 
 ### Зафиксировано в репо
-- Фикс `RawHttpCall.method`: [`68a8dba`](https://github.com/IceGudvin/smart-project-map/commit/68a8dbad59d49c73364c6be2a3afcbbb94c216d7)
-- Парсеры TypeScript + Python: [`f88b149`](https://github.com/IceGudvin/smart-project-map/commit/f88b149a16d11fba998c19b68eb8b9eed0148025)
-- `try/catch` + CHANGELOG: этот коммит
-
-### Результаты проверки
-- `layer-1-parser/` `pnpm typecheck` — ✅ 0 errors
-- `layer-1-parser/` `pnpm build` — ✅ 12.05 KB dist/index.js
-- `shared/` `pnpm build` — ✅
+- [`f88b149`](https://github.com/IceGudvin/smart-project-map/commit/f88b149a16d11fba998c19b68eb8b9eed0148025)
 
 ---
 
@@ -57,51 +74,23 @@
 
 ### Добавлено
 - `pnpm-workspace.yaml` — явный список 7 пакетов monorepo
-- `tsconfig.base.json` — strict TypeScript для всех слоёв (`exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, `noImplicitOverride`)
-- `.gitignore` — `node_modules`, `dist`, `.env`, IDE-файлы
-- **`shared/`** — полный набор TypeScript-типов:
-  - `graph.ts` — `ServiceNode`, `Edge`, `GraphModel`, `GraphDiff`, `Schema`, `Route`, `SchemaRef`
-  - `events.ts` — `WsEvent` (union: `graph:full`, `graph:update`, `graph:error`, `ping`)
-  - `parser.ts` — `RawParserOutput`, `RawRoute`, `RawHttpCall`, `RawSchema`, `EnvEntry`
-  - `index.ts` — реэкспорт всего публичного API
-- **`layer-1-parser/`** — скелет из 8 файлов-заглушек с правильными импортами из `@smart-map/shared`
-- `SPACE_INSTRUCTIONS.md` — добавлен раздел про Roadmap-issue
-
-### Изменено
-- `package.json` (корень) — обновлён: добавлены скрипты `typecheck`, `clean`
-
-### Проблемы и фиксы в ходе сессии
-- `ast-grep-napi` → `@ast-grep/napi` — неверное имя пакета
-- `rootDir` ошибка в `layer-1-parser` — `paths` переключён с `shared/src/` на `shared/dist/index.d.ts`
-- `composite: true` поломал `tsup` — убран из `shared/tsconfig.json`
-- Порядок `exports` в `shared/package.json` — `"types"` перемещён первым
-- Отсутствие `"type": "module"` — добавлено в `shared/package.json` и `layer-1-parser/package.json`
+- `tsconfig.base.json` — strict TypeScript для всех слоёв
+- `.gitignore`
+- **`shared/`** — полный набор TypeScript-типов
+- **`layer-1-parser/`** — скелет
+- `SPACE_INSTRUCTIONS.md`
 
 ### Зафиксировано в репо
-- Основной коммит: [`cdd8053`](https://github.com/IceGudvin/smart-project-map/commit/cdd8053a7244b32e6db2b12c022c4e78adbe4e4e) — 19 файлов
-- Фиксы: [`9e1f23e`](https://github.com/IceGudvin/smart-project-map/commit/9e1f23e2be3f2a7c65495f82422ced82ca61965a), [`6192ba3`](https://github.com/IceGudvin/smart-project-map/commit/6192ba392c10075c43c753a07e0640f5db9d574c), [`a4d181d`](https://github.com/IceGudvin/smart-project-map/commit/a4d181df59f9743fbc7a72fb43eef991140f79dd)
-
-### Результаты проверки
-- `pnpm install` — ✅
-- `shared/` `pnpm typecheck` — ✅ 0 errors
-- `shared/` `pnpm build` — ✅
-- `layer-1-parser/` `pnpm typecheck` — ✅ 0 errors
-- `layer-1-parser/` `pnpm build` — ✅
+- [`cdd8053`](https://github.com/IceGudvin/smart-project-map/commit/cdd8053a7244b32e6db2b12c022c4e78adbe4e4e)
 
 ---
 
 ## [2026-07-26] — Референсный проект Leadway, детализация Python/FastAPI слоя
 
 ### Добавлено
-- **Раздел «Референсный проект: Leadway»** в `CONCEPT.md`
+- Раздел «Референсный проект: Leadway» в `CONCEPT.md`
 - Таблица стека Leadway: FastAPI 0.111, SQLAlchemy 2.0, PostgreSQL, Redis, MinIO, PyJWT, Next.js
 - Data-flow пример `POST /auth/login` для Layer 5
-
-### Изменено
-- Layer 1 — детализирован Python/FastAPI extractor
-- Layer 2 — Resolver расширен: инфраструктурные узлы из `.env`
-- Layer 4 — визуальное различие узлов по `nodeType`
-- `shared/` — добавлены поля `framework` и `nodeType` в `ServiceNode`
 
 ### Зафиксировано в репо
 - `CONCEPT.md` — коммит `02b6992`
