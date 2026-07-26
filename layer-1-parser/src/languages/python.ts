@@ -37,10 +37,12 @@ function extractHttpCalls(filePath: string, src: string): RawHttpCall[] {
   let match: RegExpExecArray | null;
   HTTP_CALL_RE.lastIndex = 0;
   while ((match = HTTP_CALL_RE.exec(src)) !== null) {
-    const method = match[1]!.toUpperCase() as RawHttpCall['method'];
+    const rawMethod = match[1]?.toUpperCase();
     const url = match[2]!;
     const line = src.slice(0, match.index).split('\n').length;
-    calls.push({ method, url, file: filePath, line });
+    const call: RawHttpCall = { url, file: filePath, line };
+    if (rawMethod) call.method = rawMethod as RawHttpCall['method'];
+    calls.push(call);
   }
   return calls;
 }
@@ -159,7 +161,6 @@ export async function parsePythonProject(
     envConfig.push(...extractEnvConfig(src));
   }
 
-  // .env file values take precedence
   const envFromFile = parseEnvFile(join(rootDir, '.env'));
   const seen = new Set<string>(envFromFile.map((e) => e.key));
   envConfig = [

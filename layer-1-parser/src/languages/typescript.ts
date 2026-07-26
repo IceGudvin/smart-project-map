@@ -52,7 +52,6 @@ function extractRoutes(project: Project): RawRoute[] {
           const path = firstArg && Node.isStringLiteral(firstArg)
             ? firstArg.getLiteralValue()
             : '/';
-          // handler is the decorated method
           const parent = node.getParent();
           const handler = Node.isMethodDeclaration(parent)
             ? parent.getName()
@@ -91,19 +90,20 @@ function extractHttpCalls(project: Project): RawHttpCall[] {
           ? urlArg.getLiteralValue()
           : urlArg?.getText() ?? 'unknown';
 
-        let method: RawHttpCall['method'] = 'GET';
+        const call: RawHttpCall = { url, file: file.getFilePath(), line: node.getStartLineNumber() };
+
         const optionsArg = args[1];
         if (optionsArg && Node.isObjectLiteralExpression(optionsArg)) {
           const methodProp = optionsArg.getProperty('method');
           if (methodProp && Node.isPropertyAssignment(methodProp)) {
             const init = methodProp.getInitializer();
             if (init && Node.isStringLiteral(init)) {
-              method = init.getLiteralValue().toUpperCase() as RawHttpCall['method'];
+              call.method = init.getLiteralValue().toUpperCase() as RawHttpCall['method'];
             }
           }
         }
 
-        calls.push({ url, method, file: file.getFilePath(), line: node.getStartLineNumber() });
+        calls.push(call);
       }
 
       // axios.get/post/...
@@ -118,12 +118,9 @@ function extractHttpCalls(project: Project): RawHttpCall[] {
           const url = urlArg && Node.isStringLiteral(urlArg)
             ? urlArg.getLiteralValue()
             : urlArg?.getText() ?? 'unknown';
-          calls.push({
-            url,
-            method: methodName as RawHttpCall['method'],
-            file: file.getFilePath(),
-            line: node.getStartLineNumber(),
-          });
+          const call: RawHttpCall = { url, file: file.getFilePath(), line: node.getStartLineNumber() };
+          call.method = methodName as RawHttpCall['method'];
+          calls.push(call);
         }
       }
     });
@@ -191,16 +188,13 @@ function extractEnvConfig(project: Project): EnvEntry[] {
 
   for (const file of project.getSourceFiles()) {
     file.forEachDescendant((node) => {
-      // process.env.KEY
       if (Node.isPropertyAccessExpression(node)) {
-        const text = node.getText();
-        const match = text.match(/^process\.env\.([A-Z0-9_]+)$/);
+        const match = node.getText().match(/^process\.env\.([A-Z0-9_]+)$/);
         if (match?.[1] && !seen.has(match[1])) {
           seen.add(match[1]);
           entries.push({ key: match[1], value: '' });
         }
       }
-      // process.env['KEY']
       if (Node.isElementAccessExpression(node)) {
         const obj = node.getExpression().getText();
         const arg = node.getArgumentExpression();
@@ -241,7 +235,7 @@ export async function parseTypeScriptProject(
     project.addSourceFilesAtPaths(files);
   }
 
-  const output: RawParserOutput = {
+  return [{
     servicePath: rootDir,
     language: 'typescript',
     framework: detectTsFramework(project),
@@ -250,9 +244,7 @@ export async function parseTypeScriptProject(
     schemas: extractSchemas(project),
     envConfig: extractEnvConfig(project),
     parsedAt: Date.now(),
-  };
-
-  return [output];
+  }];
 }
 
 function detectTsFramework(project: Project): RawParserOutput['framework'] {
