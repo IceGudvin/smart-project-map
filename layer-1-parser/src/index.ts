@@ -1,26 +1,48 @@
-/**
- * Layer 1 — Parser
- * Entry point: given a service root path, returns RawParserOutput.
- *
- * TODO (next session): implement real extractors for TypeScript and Python.
- */
+import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import type { RawParserOutput } from '@smart-map/shared';
+import { parseTypeScriptProject } from './languages/typescript.js';
+import { parsePythonProject } from './languages/python.js';
 
-import type { RawParserOutput } from '@smart-map/shared'
+export type { RawParserOutput } from '@smart-map/shared';
 
 /**
- * Parse a single service directory and return raw extraction results.
- * @param servicePath - Absolute path to the service root
+ * Detect project language/framework by inspecting root files.
  */
-export async function parse(servicePath: string): Promise<RawParserOutput> {
-  // Stub — will be replaced with real language detection + extraction
-  return {
-    servicePath,
-    language: 'unknown',
-    framework: 'unknown',
-    routes: [],
-    httpCalls: [],
-    schemas: [],
-    envConfig: [],
-    parsedAt: Date.now(),
+function detectLanguage(rootDir: string): 'typescript' | 'python' | 'unknown' {
+  if (
+    existsSync(join(rootDir, 'tsconfig.json')) ||
+    existsSync(join(rootDir, 'package.json'))
+  ) {
+    return 'typescript';
   }
+  if (
+    existsSync(join(rootDir, 'pyproject.toml')) ||
+    existsSync(join(rootDir, 'requirements.txt')) ||
+    existsSync(join(rootDir, 'setup.py'))
+  ) {
+    return 'python';
+  }
+  return 'unknown';
+}
+
+/**
+ * Parse a project directory and return raw parser output per service.
+ * Supports TypeScript (Express / Fastify / NestJS) and Python (FastAPI).
+ */
+export async function parseProject(
+  rootDir: string,
+): Promise<RawParserOutput[]> {
+  const lang = detectLanguage(rootDir);
+
+  if (lang === 'typescript') {
+    return parseTypeScriptProject(rootDir);
+  }
+
+  if (lang === 'python') {
+    return parsePythonProject(rootDir);
+  }
+
+  console.warn(`[layer-1-parser] Unknown language in: ${rootDir}`);
+  return [];
 }
