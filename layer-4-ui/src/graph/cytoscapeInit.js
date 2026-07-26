@@ -2,7 +2,7 @@
  * cytoscapeInit.js
  */
 import cytoscape from 'cytoscape';
-import dagre from 'cytoscape-dagre';
+import dagre    from 'cytoscape-dagre';
 import { emit } from '../lib/eventBus.js';
 import { store } from '../store.js';
 cytoscape.use(dagre);
@@ -10,21 +10,21 @@ cytoscape.use(dagre);
 const SIMPLE_ICONS_CDN = 'https://cdn.simpleicons.org';
 
 const ICON_SLUG = {
-    nextjs: 'nextdotjs',
-    fastapi: 'fastapi',
-    express: 'express',
-    fastify: 'fastify',
-    nestjs: 'nestjs',
-    gin: 'go',
-    postgres: 'postgresql',
-    postgresql: 'postgresql',
-    redis: 'redis',
-    minio: 'minio',
-    s3: 'amazons3',
-    mongodb: 'mongodb',
-    mysql: 'mysql',
-    rabbitmq: 'rabbitmq',
-    kafka: 'apachekafka',
+    nextjs:        'nextdotjs',
+    fastapi:       'fastapi',
+    express:       'express',
+    fastify:       'fastify',
+    nestjs:        'nestjs',
+    gin:           'go',
+    postgres:      'postgresql',
+    postgresql:    'postgresql',
+    redis:         'redis',
+    minio:         'minio',
+    s3:            'amazons3',
+    mongodb:       'mongodb',
+    mysql:         'mysql',
+    rabbitmq:      'rabbitmq',
+    kafka:         'apachekafka',
     elasticsearch: 'elasticsearch',
 };
 
@@ -36,9 +36,8 @@ const NODE_COLOR = {
 
 function nodeShape(node) {
     if (node.nodeType === 'service') return 'roundrectangle';
-    const dbFrameworks = new Set(['postgres', 'postgresql', 'mysql', 'mongodb', 'elasticsearch']);
-    const isDb = dbFrameworks.has(node.id) || dbFrameworks.has(node.framework);
-    return isDb ? 'ellipse' : 'hexagon';
+    const dbSet = new Set(['postgres','postgresql','mysql','mongodb','elasticsearch']);
+    return (dbSet.has(node.id) || dbSet.has(node.framework)) ? 'ellipse' : 'hexagon';
 }
 
 export function getIconSlug(node) {
@@ -46,11 +45,10 @@ export function getIconSlug(node) {
 }
 
 function buildNodeElement(node, isDark) {
-    const color = isDark
-        ? NODE_COLOR[node.nodeType]?.dark ?? NODE_COLOR.service.dark
-        : NODE_COLOR[node.nodeType]?.light ?? NODE_COLOR.service.light;
+    const color   = isDark
+        ? NODE_COLOR[node.nodeType]?.dark   ?? NODE_COLOR.service.dark
+        : NODE_COLOR[node.nodeType]?.light  ?? NODE_COLOR.service.light;
     const slug    = getIconSlug(node);
-    // Если слаг есть — полный URL, иначе — пустая строка (селектор node[iconUrl=""] скроет настройки)
     const iconUrl = slug ? `${SIMPLE_ICONS_CDN}/${slug}/ffffff` : '';
     return {
         data: {
@@ -69,18 +67,50 @@ export function edgeKey(edge) {
     return `${edge.from}->${edge.to}::${edge.method ?? ''}:${edge.path ?? ''}`;
 }
 
-function buildEdgeElement(edge) {
-    return {
-        data: {
-            id:           edgeKey(edge),
-            source:       edge.from,
-            target:       edge.to,
-            method:       edge.method  ?? '',
-            path:         edge.path    ?? '',
-            inputSchema:  edge.inputPayload?.schemaName  ?? '',
-            outputSchema: edge.outputPayload?.schemaName ?? '',
-        },
-    };
+/** Ключ группы: пара source→target без метода/пути */
+function edgeGroupKey(edge) {
+    return `${edge.from ?? edge.source}->${edge.to ?? edge.target}`;
+}
+
+/**
+ * Группируем рёбра: несколько рёбер между одной парой узлов
+ * сворачиваем в одно с badge-счётчиком.
+ */
+function groupEdges(edges) {
+    const groups = new Map();
+    for (const e of edges) {
+        const gk = edgeGroupKey(e);
+        if (!groups.has(gk)) groups.set(gk, []);
+        groups.get(gk).push(e);
+    }
+    const result = [];
+    for (const [, group] of groups) {
+        const first = group[0];
+        const count = group.length;
+        result.push({
+            data: {
+                // id группы — без метода/пути, уникален для пары
+                id:           edgeGroupKey(first),
+                source:       first.from ?? first.source,
+                target:       first.to   ?? first.target,
+                // при count=1 показываем метод+путь, иначе только счётчик
+                method:       count === 1 ? (first.method ?? '') : '',
+                path:         count === 1 ? (first.path   ?? '') : '',
+                count,
+                label:        count > 1 ? `×${count}` : '',
+                inputSchema:  first.inputPayload?.schemaName  ?? '',
+                outputSchema: first.outputPayload?.schemaName ?? '',
+                // сохраняем все маршруты для тултипа
+                routes: group.map(e => ({
+                    method: e.method ?? '',
+                    path:   e.path   ?? '',
+                    inputSchema:  e.inputPayload?.schemaName  ?? '',
+                    outputSchema: e.outputPayload?.schemaName ?? '',
+                })),
+            },
+        });
+    }
+    return result;
 }
 
 function buildStylesheet(isDark) {
@@ -88,7 +118,9 @@ function buildStylesheet(isDark) {
     const textColor = isDark ? '#d1d0ce' : '#1e1d19';
     const dimText   = isDark ? '#4e4d4b' : '#b0afa9';
     const dimBorder = isDark ? 0.12 : 0.10;
+    const edgeLabelColor = isDark ? '#9a9896' : '#7a7974';
     return [
+        // ---- base node
         {
             selector: 'node',
             style: {
@@ -102,16 +134,14 @@ function buildStylesheet(isDark) {
                 'text-valign':        'center',
                 'text-halign':        'center',
                 'color':              textColor,
-                'font-size':          12,
+                'font-size':          11,
                 'font-family':        'Inter',
                 'font-weight':        '500',
                 'width':              120,
                 'height':             44,
                 'padding':            '10px',
-                // Базовое значение none — переопределяется селектором node[iconUrl != ""] ниже
+                // базово без иконки
                 'background-image':   'none',
-                'background-fit':     'contain',
-                'background-clip':    'none',
                 'background-width':   '0%',
                 'background-height':  '0%',
                 'text-margin-y':      0,
@@ -120,16 +150,18 @@ function buildStylesheet(isDark) {
                 'transition-timing-function': 'ease-out',
             },
         },
-        // Узлы С иконкой — применяем URL из data
+        // ---- узлы с иконкой
         {
             selector: 'node[iconUrl != ""]',
             style: {
                 'background-image':      'data(iconUrl)',
-                'background-width':      '55%',
-                'background-height':     '55%',
+                'background-fit':        'contain',
+                'background-clip':       'none',
+                'background-width':      '36%',
+                'background-height':     '36%',
                 'background-position-x': '50%',
-                'background-position-y': '30%',
-                'text-margin-y':         10,
+                'background-position-y': '28%',
+                'text-margin-y':         8,
             },
         },
         { selector: 'node.hover',       style: { 'background-opacity': 0.30, 'border-width': 3 } },
@@ -146,29 +178,42 @@ function buildStylesheet(isDark) {
                 'background-height':  '0%',
             },
         },
+        // ---- base edge
         {
             selector: 'edge',
             style: {
                 'width':               2,
                 'line-color':          primary,
-                'line-opacity':        0.45,
+                'line-opacity':        0.40,
                 'target-arrow-color':  primary,
                 'target-arrow-shape':  'triangle',
-                'arrow-scale':         1.2,
+                'arrow-scale':         1.0,
                 'curve-style':         'bezier',
+                'label':               'data(label)',
+                'font-size':           9,
+                'font-family':         'Inter',
+                'color':               edgeLabelColor,
+                'text-background-color':   isDark ? '#1c1b19' : '#f9f8f5',
+                'text-background-opacity': 0.85,
+                'text-background-padding': '2px',
+                'text-border-radius':      2,
                 'transition-property': 'line-opacity width',
                 'transition-duration': '200ms',
             },
         },
-        { selector: 'edge.hover',       style: { 'line-opacity': 0.85, 'width': 3 } },
+        // ---- толщина растёт с количеством маршрутов
+        { selector: 'edge[count > 1]',   style: { 'width': 2.5 } },
+        { selector: 'edge[count > 5]',   style: { 'width': 3   } },
+        { selector: 'edge[count > 15]',  style: { 'width': 3.5 } },
+        { selector: 'edge.hover',        style: { 'line-opacity': 0.90, 'width': 4 } },
         {
             selector: 'edge.highlighted',
             style: {
-                'width':             3,
-                'line-opacity':      1,
-                'line-style':        'dashed',
-                'line-dash-pattern': [10, 6],
-                'line-dash-offset':  0,
+                'width':              3.5,
+                'line-opacity':       1,
+                'line-style':         'dashed',
+                'line-dash-pattern':  [10, 6],
+                'line-dash-offset':   0,
                 'target-arrow-shape': 'triangle',
             },
         },
@@ -205,15 +250,13 @@ export function applyDataflowHighlight(cy, pathIndex) {
     const activeNodeIds = new Set(path.nodeIds);
     cy.batch(() => {
         cy.elements().removeClass('highlighted dimmed');
-        cy.nodes().forEach((node) => {
-            if (activeNodeIds.has(node.id())) node.addClass('highlighted');
-            else                              node.addClass('dimmed');
+        cy.nodes().forEach(n => {
+            if (activeNodeIds.has(n.id())) n.addClass('highlighted');
+            else                           n.addClass('dimmed');
         });
-        cy.edges().forEach((edge) => {
-            const srcOk = activeNodeIds.has(edge.data('source'));
-            const tgtOk = activeNodeIds.has(edge.data('target'));
-            if (srcOk && tgtOk) edge.addClass('highlighted');
-            else                edge.addClass('dimmed');
+        cy.edges().forEach(e => {
+            const ok = activeNodeIds.has(e.data('source')) && activeNodeIds.has(e.data('target'));
+            e.addClass(ok ? 'highlighted' : 'dimmed');
         });
     });
 }
@@ -234,55 +277,50 @@ export function highlightSelected(cy, nodeId) {
     });
 }
 
-// ================================================================ graph sync
-/**
- * Полная замена всех элементов cy.
- * Ремов всех → дедупликация рёбер → добавление → layout.
- */
+// ================================================================ syncGraph
 export function syncGraph(cy, graph, isDark) {
     const seenEdges = new Set();
-    const uniqueEdges = graph.edges.filter((e) => {
+    const uniqueEdges = graph.edges.filter(e => {
         const k = edgeKey(e);
         if (seenEdges.has(k)) return false;
         seenEdges.add(k);
         return true;
     });
 
-    const nodeEls = graph.nodes.map((n) => buildNodeElement(n, isDark));
-    const edgeEls = uniqueEdges.map((e) => buildEdgeElement(e));
+    const nodeEls = graph.nodes.map(n => buildNodeElement(n, isDark));
+    const edgeEls = groupEdges(uniqueEdges);
 
     cy.batch(() => {
         cy.elements().remove();
         cy.add([...nodeEls, ...edgeEls]);
     });
-
     runLayout(cy);
 }
 
 // ================================================================ event handlers
 function attachEventHandlers(cy) {
-    cy.on('tap', 'node', (evt) => {
+    cy.on('tap', 'node', evt => {
         const id = evt.target.id();
         store.selectNode(id);
         emit('node:select', id);
         if (!store.dataflowMode) highlightSelected(cy, id);
     });
-    cy.on('tap', (evt) => {
+    cy.on('tap', evt => {
         if (evt.target === cy) {
             store.selectNode(null);
             emit('node:deselect', undefined);
             if (!store.dataflowMode) cy.elements().removeClass('highlighted dimmed');
         }
     });
-    cy.on('mouseover', 'node', (evt) => {
+    cy.on('mouseover', 'node', evt => {
         evt.target.addClass('hover');
         cy.container()?.style.setProperty('cursor', 'pointer');
     });
-    cy.on('mouseout', 'node', (evt) => {
+    cy.on('mouseout', 'node', evt => {
         evt.target.removeClass('hover');
         cy.container()?.style.setProperty('cursor', 'default');
     });
-    cy.on('mouseover', 'edge', (evt) => {
+    cy.on('mouseover', 'edge', evt => {
         evt.target.addClass('hover');
         cy.container()?.style.setProperty('cursor', 'crosshair');
         const edge = evt.target;
@@ -290,16 +328,18 @@ function attachEventHandlers(cy) {
             edgeId:       edge.id(),
             method:       edge.data('method'),
             path:         edge.data('path'),
+            count:        edge.data('count'),
+            routes:       edge.data('routes'),
             inputSchema:  edge.data('inputSchema'),
             outputSchema: edge.data('outputSchema'),
             x:            evt.renderedPosition.x,
             y:            evt.renderedPosition.y,
         });
     });
-    cy.on('mousemove', 'edge', (evt) => {
+    cy.on('mousemove', 'edge', evt => {
         emit('edge:mousemove', { x: evt.renderedPosition.x, y: evt.renderedPosition.y });
     });
-    cy.on('mouseout', 'edge', (evt) => {
+    cy.on('mouseout', 'edge', evt => {
         evt.target.removeClass('hover');
         cy.container()?.style.setProperty('cursor', 'default');
         emit('edge:mouseout', undefined);
@@ -312,7 +352,7 @@ export function runLayout(cy, direction = 'TB') {
         name:    'dagre',
         rankDir: direction,
         nodeSep: 80,
-        rankSep: 100,
+        rankSep: 120,
         padding: 60,
     }).run();
 }
@@ -324,7 +364,7 @@ export function updateTheme(cy, isDark) {
 // ================================================================ init
 export function initCytoscape({ container, graph, isDark = true }) {
     const seenEdges = new Set();
-    const uniqueEdges = graph.edges.filter((e) => {
+    const uniqueEdges = graph.edges.filter(e => {
         const k = edgeKey(e);
         if (seenEdges.has(k)) return false;
         seenEdges.add(k);
@@ -333,7 +373,7 @@ export function initCytoscape({ container, graph, isDark = true }) {
 
     const elements = [
         ...graph.nodes.map(n => buildNodeElement(n, isDark)),
-        ...uniqueEdges.map(e => buildEdgeElement(e)),
+        ...groupEdges(uniqueEdges),
     ];
 
     const cy = cytoscape({
