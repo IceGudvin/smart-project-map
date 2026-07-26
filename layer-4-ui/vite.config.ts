@@ -22,6 +22,15 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
+      // Файловый браузер + управление проектом
+      '/fs': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/server': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
     },
   },
   build: {

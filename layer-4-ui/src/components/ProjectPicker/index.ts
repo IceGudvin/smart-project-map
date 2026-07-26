@@ -1,11 +1,9 @@
 /**
  * ProjectPicker — модальный экран выбора проекта.
  *
- * Функции:
- *   - Поле ввода пути вручную
- *   - Кнопка «Обзор» — открывает файловый браузер (через GET /fs/browse)
- *   - Список недавних проектов
- *   - POST /server/start { projectDir }
+ * Исправления:
+ *   - fb-overlay/pp-overlay получают data-theme с <html> при создании
+ *   - тема синхронизируется при theme:changed пока модал открыт
  */
 
 import { emit, on } from '../../lib/eventBus.js'
@@ -19,6 +17,17 @@ function getRecent(): string[] {
 function saveRecent(path: string): void {
   const list = [path, ...getRecent().filter((p) => p !== path)].slice(0, MAX_RECENT)
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)) } catch { /* ok */ }
+}
+
+/** Копирует data-theme с <html> на элемент и подписывается на theme:changed */
+function inheritTheme(el: HTMLElement): () => void {
+  const sync = () => {
+    const t = document.documentElement.getAttribute('data-theme')
+    if (t) el.setAttribute('data-theme', t)
+    else el.removeAttribute('data-theme')
+  }
+  sync()
+  return on('theme:changed', sync)
 }
 
 // ───────────────────────── styles
@@ -53,10 +62,7 @@ function injectStyles(): void {
     }
     .pp-overlay.visible .pp-modal { transform: translateY(0) scale(1); }
 
-    /* ── header ── */
-    .pp-head {
-      display: flex; align-items: center; justify-content: space-between;
-    }
+    .pp-head { display: flex; align-items: center; justify-content: space-between; }
     .pp-title {
       display: flex; align-items: center; gap: 0.5rem;
       font-size: var(--text-base, 1rem); font-weight: 600;
@@ -71,10 +77,7 @@ function injectStyles(): void {
     }
     .pp-close:hover { background: var(--color-surface-offset, #2a2a2a); color: var(--color-text, #eee); }
 
-    /* ── path row ── */
-    .pp-path-row {
-      display: flex; gap: 0.5rem; align-items: center;
-    }
+    .pp-path-row { display: flex; gap: 0.5rem; align-items: center; }
     .pp-input {
       flex: 1; min-width: 0;
       background: var(--color-bg, #141414);
@@ -87,7 +90,10 @@ function injectStyles(): void {
       outline: none;
       transition: border-color 160ms;
     }
-    .pp-input:focus { border-color: var(--color-primary, #4f98a3); box-shadow: 0 0 0 3px oklch(from var(--color-primary, #4f98a3) l c h / 0.15); }
+    .pp-input:focus {
+      border-color: var(--color-primary, #4f98a3);
+      box-shadow: 0 0 0 3px oklch(from var(--color-primary, #4f98a3) l c h / 0.15);
+    }
     .pp-input::placeholder { color: var(--color-text-faint, #555); }
 
     .pp-btn-browse {
@@ -99,8 +105,7 @@ function injectStyles(): void {
       padding: 0.5rem 0.75rem;
       font-size: 0.8rem; font-weight: 500;
       color: var(--color-text-muted, #999);
-      cursor: pointer;
-      white-space: nowrap;
+      cursor: pointer; white-space: nowrap;
       transition: background 160ms, border-color 160ms, color 160ms;
     }
     .pp-btn-browse:hover {
@@ -108,31 +113,26 @@ function injectStyles(): void {
       border-color: var(--color-primary, #4f98a3);
       color: var(--color-text, #eee);
     }
-
     .pp-btn-open {
       flex-shrink: 0;
       background: var(--color-primary, #4f98a3);
       border: none; border-radius: 8px;
       padding: 0.5rem 1.1rem;
       font-size: 0.85rem; font-weight: 600;
-      color: #fff; cursor: pointer;
-      white-space: nowrap;
+      color: #fff; cursor: pointer; white-space: nowrap;
       transition: background 160ms, opacity 160ms;
     }
     .pp-btn-open:hover { background: var(--color-primary-hover, #227f8b); }
     .pp-btn-open:disabled { opacity: 0.45; cursor: not-allowed; }
 
-    /* ── status ── */
     .pp-status {
-      min-height: 1.2em;
-      font-size: 0.8rem;
+      min-height: 1.2em; font-size: 0.8rem;
       color: var(--color-text-muted, #777);
       display: flex; align-items: center; gap: 0.4rem;
     }
-    .pp-status.error { color: var(--color-error, #d163a7); }
+    .pp-status.error   { color: var(--color-error, #d163a7); }
     .pp-status.success { color: var(--color-success, #6daa45); }
 
-    /* ── recent ── */
     .pp-section-label {
       font-size: 0.7rem; text-transform: uppercase;
       letter-spacing: 0.08em; color: var(--color-text-faint, #555);
@@ -150,10 +150,7 @@ function injectStyles(): void {
     .pp-recent-item:hover { background: var(--color-surface-offset, #2a2a2a); color: var(--color-text, #eee); }
     .pp-recent-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-primary, #4f98a3); flex-shrink: 0; opacity: 0.6; }
 
-    /* ── divider ── */
     .pp-divider { height: 1px; background: var(--color-divider, #2a2a2a); }
-
-    /* ── hint ── */
     .pp-hint { font-size: 0.72rem; color: var(--color-text-faint, #555); line-height: 1.5; }
     .pp-hint code {
       font-family: var(--font-mono, monospace);
@@ -191,13 +188,9 @@ function injectStyles(): void {
       border-bottom: 1px solid var(--color-divider, #2a2a2a);
       flex-shrink: 0;
     }
-    .fb-topbar-title {
-      font-size: 0.8rem; font-weight: 600;
-      color: var(--color-text, #eee); flex-shrink: 0;
-    }
+    .fb-topbar-title { font-size: 0.8rem; font-weight: 600; color: var(--color-text, #eee); flex-shrink: 0; }
     .fb-breadcrumb {
-      display: flex; align-items: center; gap: 0; flex: 1; min-width: 0;
-      overflow: hidden;
+      display: flex; align-items: center; gap: 0; flex: 1; min-width: 0; overflow: hidden;
     }
     .fb-crumb {
       font-size: 0.72rem; color: var(--color-text-muted, #888);
@@ -308,23 +301,30 @@ let _fbOverlay: HTMLElement | null = null
 let _fbCurrentPath = ''
 let _fbSelectedPath = ''
 let _fbOnSelect: ((path: string) => void) | null = null
+let _fbThemeUnsub: (() => void) | null = null
 
 async function _fbBrowse(path: string): Promise<BrowseResult | null> {
   try {
     const res = await fetch(`/fs/browse?path=${encodeURIComponent(path)}`)
     if (!res.ok) return null
+    const ct = res.headers.get('content-type') ?? ''
+    if (!ct.includes('application/json')) {
+      console.error('[FileBrowser] /fs/browse returned non-JSON:', ct)
+      return null
+    }
     return res.json()
-  } catch {
+  } catch (err) {
+    console.error('[FileBrowser] fetch error:', err)
     return null
   }
 }
 
 function _fbRender(result: BrowseResult): void {
-  const topbar = _fbOverlay!.querySelector<HTMLElement>('.fb-topbar')!
-  const list = _fbOverlay!.querySelector<HTMLElement>('.fb-list')!
+  const topbar         = _fbOverlay!.querySelector<HTMLElement>('.fb-topbar')!
+  const list           = _fbOverlay!.querySelector<HTMLElement>('.fb-list')!
   const selectedPathEl = _fbOverlay!.querySelector<HTMLElement>('.fb-selected-path')!
-  const btnSelect = _fbOverlay!.querySelector<HTMLButtonElement>('.fb-btn-select')!
-  const btnUp = _fbOverlay!.querySelector<HTMLButtonElement>('.fb-btn-up')!
+  const btnSelect      = _fbOverlay!.querySelector<HTMLButtonElement>('.fb-btn-select')!
+  const btnUp          = _fbOverlay!.querySelector<HTMLButtonElement>('.fb-btn-up')!
 
   _fbCurrentPath = result.path
 
@@ -334,16 +334,13 @@ function _fbRender(result: BrowseResult): void {
     `<span class="fb-crumb" data-path="${c.path}">${c.label}</span>` +
     (i < result.breadcrumbs.length - 1 ? `<span class="fb-crumb-sep">›</span>` : '')
   ).join('')
-
   breadcrumb.querySelectorAll<HTMLElement>('.fb-crumb').forEach((el) => {
     el.addEventListener('click', () => _fbNavigate(el.dataset.path!))
   })
 
-  // Up button
   btnUp.disabled = !result.parent
   btnUp.onclick = () => { if (result.parent) _fbNavigate(result.parent) }
 
-  // List
   list.innerHTML = ''
   if (result.entries.length === 0) {
     list.innerHTML = '<div class="fb-empty">Папок нет</div>'
@@ -358,14 +355,12 @@ function _fbRender(result: BrowseResult): void {
       if (_fbSelectedPath === fullPath) item.classList.add('selected')
       item.innerHTML = `
         <span class="fb-item-icon">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
             <path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/>
           </svg>
         </span>
         <span class="fb-item-name">${entry.name}</span>
       `
-
-      // Одиночный клик — выбрать
       item.addEventListener('click', () => {
         _fbOverlay!.querySelectorAll('.fb-item').forEach((i) => i.classList.remove('selected'))
         item.classList.add('selected')
@@ -374,10 +369,7 @@ function _fbRender(result: BrowseResult): void {
         selectedPathEl.classList.add('has-value')
         btnSelect.disabled = false
       })
-
-      // Двойной клик — войти
       item.addEventListener('dblclick', () => _fbNavigate(fullPath))
-
       list.appendChild(item)
     }
   }
@@ -390,7 +382,6 @@ function _fbRender(result: BrowseResult): void {
 async function _fbNavigate(path: string): Promise<void> {
   const list = _fbOverlay!.querySelector<HTMLElement>('.fb-list')!
   list.innerHTML = '<div class="fb-loading"><div class="fb-spinner"></div> Загрузка...</div>'
-
   const result = await _fbBrowse(path)
   if (!result || !result.ok) {
     list.innerHTML = '<div class="fb-empty">Нет доступа к папке</div>'
@@ -407,6 +398,10 @@ function _showFileBrowser(initialPath: string, onSelect: (path: string) => void)
 
   const overlay = document.createElement('div')
   overlay.className = 'fb-overlay'
+
+  // ── FIX: наследуем тему с <html>
+  _fbThemeUnsub = inheritTheme(overlay)
+
   _fbOverlay = overlay
 
   overlay.innerHTML = `
@@ -438,23 +433,20 @@ function _showFileBrowser(initialPath: string, onSelect: (path: string) => void)
 
   overlay.querySelector('.fb-close')!.addEventListener('click', _hideFileBrowser)
   overlay.addEventListener('click', (e) => { if (e.target === overlay) _hideFileBrowser() })
-
   overlay.querySelector('.fb-btn-select')!.addEventListener('click', () => {
-    if (_fbSelectedPath) {
-      _fbOnSelect?.(_fbSelectedPath)
-      _hideFileBrowser()
-    }
+    if (_fbSelectedPath) { _fbOnSelect?.(_fbSelectedPath); _hideFileBrowser() }
   })
 
   document.body.appendChild(overlay)
   requestAnimationFrame(() => requestAnimationFrame(() => overlay.classList.add('visible')))
-
   _fbNavigate(initialPath)
 }
 
 function _hideFileBrowser(): void {
   if (!_fbOverlay) return
   _fbOverlay.classList.remove('visible')
+  _fbThemeUnsub?.()
+  _fbThemeUnsub = null
   setTimeout(() => { _fbOverlay?.remove(); _fbOverlay = null }, 180)
 }
 
@@ -464,12 +456,17 @@ let _overlay: HTMLElement | null = null
 let _input: HTMLInputElement | null = null
 let _statusEl: HTMLElement | null = null
 let _goBtn: HTMLButtonElement | null = null
+let _ppThemeUnsub: (() => void) | null = null
 
 function _render(): void {
   injectStyles()
 
   const overlay = document.createElement('div')
   overlay.className = 'pp-overlay'
+
+  // ── FIX: наследуем тему с <html>
+  _ppThemeUnsub = inheritTheme(overlay)
+
   _overlay = overlay
 
   const recent = getRecent()
@@ -529,12 +526,11 @@ function _render(): void {
     </div>
   `
 
-  _input = overlay.querySelector<HTMLInputElement>('.pp-input')!
+  _input    = overlay.querySelector<HTMLInputElement>('.pp-input')!
   _statusEl = overlay.querySelector<HTMLElement>('.pp-status')!
-  _goBtn = overlay.querySelector<HTMLButtonElement>('.pp-btn-open')!
+  _goBtn    = overlay.querySelector<HTMLButtonElement>('.pp-btn-open')!
   const browseBtn = overlay.querySelector<HTMLButtonElement>('.pp-btn-browse')!
 
-  // Недавние
   overlay.querySelectorAll<HTMLElement>('.pp-recent-item').forEach((li) => {
     li.addEventListener('click', () => {
       if (_input) _input.value = li.dataset.path ?? ''
@@ -542,7 +538,6 @@ function _render(): void {
     })
   })
 
-  // Браузер папок
   browseBtn.addEventListener('click', () => {
     const startPath = _input?.value.trim() || '/'
     _showFileBrowser(startPath, (selectedPath) => {
@@ -600,13 +595,13 @@ function _setStatus(msg: string, type: '' | 'error' | 'success'): void {
   _statusEl.className = `pp-status${type ? ' ' + type : ''}`
 }
 
-// ───────────────────────── export
-
 export const ProjectPicker = {
   mount(): void { on('project:pick:show', () => ProjectPicker.show()) },
   show(): void { if (_overlay) return; _render() },
   hide(): void {
     document.removeEventListener('keydown', _onEsc)
+    _ppThemeUnsub?.()
+    _ppThemeUnsub = null
     if (!_overlay) return
     _overlay.classList.remove('visible')
     setTimeout(() => {
