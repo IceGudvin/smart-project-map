@@ -1,116 +1,207 @@
-import type { Store } from '../../store'
-import type { DetailPanel } from '../DetailPanel'
-import type { EdgeTooltip } from '../EdgeTooltip'
-import { initCytoscape } from '../../graph/cytoscapeInit'
-import { CanvasToolbar } from './CanvasToolbar'
-import { ZoomControls } from './ZoomControls'
-import { Legend } from './Legend'
-import { StatsBar } from './StatsBar'
-import type cytoscape from 'cytoscape'
-
 /**
- * Canvas — главная область с графом Cytoscape.
+ * Canvas/index.ts — Основная область с графом Cytoscape + все оверлеи.
  *
- * Структура:
- *   #cy                — контейнер Cytoscape
- *   StatsBar           — счётчики (сервисы / связи / роуты)
- *   CanvasToolbar      — инструменты (pan, dataflow, layout)
- *   ZoomControls       — +/−/fit
- *   Legend             — легенда типов узлов
- *
- * init() вызывается AppShell после монтирования DOM.
- * update() пересоздаёт граф при смене store.graph.
+ * Структура DOM (все через CSS position:absolute поверх #cy):
+ *   .canvas-wrap
+ *     ├─ #cy                     — Cytoscape (width/height 100%)
+ *     ├─ .canvas-statsbar        — левый верх
+ *     ├─ .canvas-toolbar         — центр верх, glassmorphism
+ *     ├─ .canvas-zoom-controls   — правый ниж, glassmorphism
+ *     └─ .canvas-legend           — левый ниж, glassmorphism
  */
 
-export class Canvas {
-  private store: Store
-  private detailPanel: DetailPanel
-  private edgeTooltip: EdgeTooltip
-  private el: HTMLElement | null = null
-  private cy: cytoscape.Core | null = null
-  private toolbar: CanvasToolbar
-  private zoomControls: ZoomControls
-  private legend: Legend
-  private statsBar: StatsBar
+import { cytoscapeInit, syncGraph, updateTheme, runLayout }
+  from '../../graph/cytoscapeInit.js'
+import { store }    from '../../store.js'
+import { on, emit } from '../../lib/eventBus.js'
+import { StatsBar }      from './StatsBar.js'
+import { CanvasToolbar } from './CanvasToolbar.js'
+import { ZoomControls }  from './ZoomControls.js'
+import { Legend }        from './Legend.js'
+import type { Core }     from 'cytoscape'
 
-  constructor(store: Store, detailPanel: DetailPanel, edgeTooltip: EdgeTooltip) {
-    this.store = store
-    this.detailPanel = detailPanel
-    this.edgeTooltip = edgeTooltip
-    this.toolbar = new CanvasToolbar()
-    this.zoomControls = new ZoomControls(() => this.cy)
-    this.legend = new Legend()
-    this.statsBar = new StatsBar(store)
-  }
+// ================================================================ CSS
 
-  render(): HTMLElement {
-    const wrap = document.createElement('div')
-    wrap.className = 'canvas-inner'
-
-    const cyEl = document.createElement('div')
-    cyEl.id = 'cy'
-    cyEl.setAttribute('aria-label', 'Граф сервисов')
-    cyEl.setAttribute('role', 'img')
-
-    wrap.appendChild(cyEl)
-    wrap.appendChild(this.statsBar.render())
-    wrap.appendChild(this.toolbar.render())
-    wrap.appendChild(this.zoomControls.render())
-    wrap.appendChild(this.legend.render())
-
-    this.el = wrap
-    return wrap
-  }
-
-  init(): void {
-    this.cy = initCytoscape({
-      container: document.getElementById('cy')!,
-      graph: this.store.graph,
-      theme: this.store.theme,
-      onNodeClick: (id) => {
-        this.store.selectNode(id)
-        this.detailPanel.show(id)
-      },
-      onEdgeHover: (data, pos) => this.edgeTooltip.show(data, pos),
-      onEdgeOut: () => this.edgeTooltip.hide(),
-      onBgClick: () => {
-        this.store.selectNode(null)
-        this.detailPanel.hide()
-      },
-    })
-
-    document.addEventListener('spm:refresh', () => this._reLayout())
-    document.addEventListener('spm:fit', () => this.cy?.fit(undefined, 60))
-    document.addEventListener('spm:selectNode', (e) => {
-      const { id } = (e as CustomEvent).detail
-      this._highlightNode(id)
-    })
-  }
-
-  update(): void {
-    if (!this.cy) return
-    this.cy.elements().remove()
-    this._addElements()
-    this.statsBar.update()
-  }
-
-  private _addElements(): void {
-    if (!this.cy) return
-    // Узлы и рёбра добавляются из store.graph через cytoscapeInit helpers
-  }
-
-  private _reLayout(): void {
-    this.cy?.layout({ name: 'dagre', rankDir: 'TB', nodeSep: 80, rankSep: 100, padding: 60 } as any).run()
-  }
-
-  private _highlightNode(id: string): void {
-    if (!this.cy) return
-    this.cy.elements().removeClass('highlighted dimmed')
-    const node = this.cy.getElementById(id)
-    if (node.length) {
-      const connected = node.closedNeighborhood()
-      this.cy.elements().not(connected).addClass('dimmed')
-      connected.addClass('highlighted')
+function injectCanvasStyles(): void {
+  if (document.getElementById('canvas-styles')) return
+  const s = document.createElement('style')
+  s.id = 'canvas-styles'
+  s.textContent = `
+    /* ---- Обёртка ---- */
+    .canvas-wrap {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
     }
+
+    /* ---- Cytoscape-контейнер ---- */
+    #cy {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      /* dot-grid паттерн (переменные из tokens.css) */
+      background-color: var(--color-bg);
+      background-image: radial-gradient(
+        circle at center,
+        var(--dot-color, rgba(120,120,120,0.2)) var(--dot-size, 1.5px),
+        transparent var(--dot-size, 1.5px)
+      );
+      background-size: var(--dot-spacing, 24px) var(--dot-spacing, 24px);
+    }
+    /* радиальный фейд по краям — псевдоэлемент ::after */
+    #cy::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(
+        ellipse at center,
+        transparent 40%,
+        var(--color-bg) 100%
+      );
+    }
+  `
+  document.head.appendChild(s)
+}
+
+// ================================================================ Canvas
+
+export class Canvas {
+  private wrap!:     HTMLElement
+  private cyEl!:    HTMLElement
+  private cy:       Core | null = null
+  private unsubs:   Array<() => void> = []
+
+  private statsBar:    StatsBar
+  private toolbar:     CanvasToolbar
+  private zoomCtrl:   ZoomControls
+  private legend:     Legend
+
+  constructor() {
+    this.statsBar  = new StatsBar()
+    this.toolbar   = new CanvasToolbar()
+    this.zoomCtrl  = new ZoomControls(() => this.cy)
+    this.legend    = new Legend()
+  }
+
+  // ============================================================ mount
+
+  mount(container: HTMLElement): void {
+    injectCanvasStyles()
+
+    // ---- Обёртка
+    this.wrap = document.createElement('div')
+    this.wrap.className = 'canvas-wrap'
+
+    // ---- #cy
+    this.cyEl = document.createElement('div')
+    this.cyEl.id = 'cy'
+    this.cyEl.setAttribute('aria-label', 'Граф сервисов')
+    this.cyEl.setAttribute('role', 'img')
+    this.wrap.appendChild(this.cyEl)
+
+    // ---- Оверлеи
+    this.statsBar.mount(this.wrap)
+    this.toolbar.mount(this.wrap)
+    this.zoomCtrl.mount(this.wrap)
+    this.legend.mount(this.wrap)
+
+    container.appendChild(this.wrap)
+
+    // ---- Cytoscape — нужен ReqAnimFrame чтобы #cy был в DOM
+    requestAnimationFrame(() => this._initCy())
+  }
+
+  // ============================================================ destroy
+
+  destroy(): void {
+    for (const u of this.unsubs) u()
+    this.unsubs = []
+    this.cy?.destroy()
+    this.cy = null
+    this.toolbar.destroy()
+    this.statsBar.destroy()
+  }
+
+  // ============================================================ getCy
+
+  getCy(): Core | null {
+    return this.cy
+  }
+
+  // ============================================================ private — init
+
+  private _initCy(): void {
+    const isDark = store.theme === 'dark'
+    this.cy = cytoscapeInit({
+      container: this.cyEl,
+      graph:     store.graph,
+      isDark,
+    })
+
+    // Сообщаем AppShell через шину
+    emit('cy:ready', this.cy as unknown)
+
+    // Статистика
+    this.statsBar.update(store.graph)
+
+    this._bindEvents()
+  }
+
+  // ============================================================ private — events
+
+  private _bindEvents(): void {
+    // graph:full / graph:update — пересинх
+    this.unsubs.push(
+      on('graph:full', (graph) => {
+        if (!this.cy) return
+        syncGraph(this.cy, graph, store.theme === 'dark')
+        this.statsBar.update(graph)
+      }),
+      on('graph:update', ({ diff }) => {
+        if (!this.cy) return
+        syncGraph(this.cy, store.graph, store.theme === 'dark')
+        this.statsBar.update(store.graph)
+      }),
+    )
+
+    // cy:fit — эмитит Header
+    this.unsubs.push(
+      on('cy:fit', () => {
+        this.cy?.fit(undefined, 60)
+      }),
+    )
+
+    // theme:changed
+    this.unsubs.push(
+      on('theme:changed', (theme) => {
+        if (!this.cy) return
+        updateTheme(this.cy, theme === 'dark')
+      }),
+    )
+
+    // dataflow:toggle
+    this.unsubs.push(
+      on('dataflow:toggle', (enabled) => {
+        this.toolbar.setDataflow(enabled)
+      }),
+    )
+
+    // dataflow:next — толбар отображает новое имя
+    this.unsubs.push(
+      on('dataflow:next', () => {
+        this.toolbar.syncDataflowPath(store.activeDataflowPath)
+      }),
+    )
+
+    // Повторный layout (для toolbar)
+    this.unsubs.push(
+      on('graph:refresh', () => {
+        if (!this.cy) return
+        runLayout(this.cy, 'TB')
+      }),
+    )
   }
 }
