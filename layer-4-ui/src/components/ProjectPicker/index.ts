@@ -1,14 +1,11 @@
 /**
  * ProjectPicker — модальный экран выбора проекта.
  *
- * Показывается когда:
- *   - WS не подключён после 3 секунд (emit 'project:pick:show')
- *   - Пользователь кликает "~/projects/..." в Header
- *
- * Позволяет:
- *   - Ввести путь к проекту вручную
- *   - Отправить POST /server/start { projectDir } на сервер
- *   - Сервер переключает projectDir и запускает пересканирование
+ * Функции:
+ *   - Поле ввода пути вручную
+ *   - Кнопка «Обзор» — открывает файловый браузер (через GET /fs/browse)
+ *   - Список недавних проектов
+ *   - POST /server/start { projectDir }
  */
 
 import { emit, on } from '../../lib/eventBus.js'
@@ -17,157 +14,456 @@ const STORAGE_KEY = 'spm:recentProjects'
 const MAX_RECENT = 5
 
 function getRecent(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]')
-  } catch {
-    return []
-  }
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]') } catch { return [] }
 }
-
 function saveRecent(path: string): void {
   const list = [path, ...getRecent().filter((p) => p !== path)].slice(0, MAX_RECENT)
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)) } catch { /* ignore */ }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)) } catch { /* ok */ }
 }
 
+// ───────────────────────── styles
+
 function injectStyles(): void {
-  if (document.getElementById('project-picker-styles')) return
+  if (document.getElementById('pp-styles')) return
   const s = document.createElement('style')
-  s.id = 'project-picker-styles'
+  s.id = 'pp-styles'
   s.textContent = `
+    /* ── overlay ── */
     .pp-overlay {
       position: fixed; inset: 0; z-index: 1000;
-      background: oklch(0 0 0 / 0.55);
-      backdrop-filter: blur(6px);
+      background: oklch(0 0 0 / 0.6);
+      backdrop-filter: blur(8px);
       display: flex; align-items: center; justify-content: center;
-      opacity: 0; transition: opacity 220ms ease;
+      opacity: 0; transition: opacity 200ms ease;
       pointer-events: none;
     }
-    .pp-overlay.visible {
-      opacity: 1; pointer-events: auto;
-    }
+    .pp-overlay.visible { opacity: 1; pointer-events: auto; }
+
+    /* ── modal ── */
     .pp-modal {
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-xl, 1rem);
-      box-shadow: 0 24px 64px oklch(0 0 0 / 0.4);
-      padding: 2rem;
-      width: min(480px, calc(100vw - 2rem));
-      display: flex; flex-direction: column; gap: 1.25rem;
-      transform: translateY(12px); transition: transform 220ms ease;
+      background: var(--color-surface, #1e1e1e);
+      border: 1px solid var(--color-border, #333);
+      border-radius: 14px;
+      box-shadow: 0 32px 80px oklch(0 0 0 / 0.55);
+      padding: 1.5rem;
+      width: min(520px, calc(100vw - 2rem));
+      display: flex; flex-direction: column; gap: 1rem;
+      transform: translateY(10px) scale(0.98);
+      transition: transform 200ms cubic-bezier(0.16,1,0.3,1);
     }
-    .pp-overlay.visible .pp-modal {
-      transform: translateY(0);
+    .pp-overlay.visible .pp-modal { transform: translateY(0) scale(1); }
+
+    /* ── header ── */
+    .pp-head {
+      display: flex; align-items: center; justify-content: space-between;
     }
     .pp-title {
-      font-size: var(--text-lg, 1.25rem);
-      font-weight: 600;
-      color: var(--color-text);
       display: flex; align-items: center; gap: 0.5rem;
+      font-size: var(--text-base, 1rem); font-weight: 600;
+      color: var(--color-text, #eee);
     }
-    .pp-title svg { flex-shrink: 0; }
-    .pp-subtitle {
-      font-size: var(--text-sm, 0.875rem);
-      color: var(--color-text-muted);
-      margin-top: -0.75rem;
+    .pp-close {
+      width: 28px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 6px; cursor: pointer;
+      color: var(--color-text-faint, #666);
+      transition: background 150ms, color 150ms;
     }
-    .pp-input-wrap {
-      display: flex; gap: 0.5rem;
+    .pp-close:hover { background: var(--color-surface-offset, #2a2a2a); color: var(--color-text, #eee); }
+
+    /* ── path row ── */
+    .pp-path-row {
+      display: flex; gap: 0.5rem; align-items: center;
     }
     .pp-input {
-      flex: 1;
-      background: var(--color-bg);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-md, 0.5rem);
+      flex: 1; min-width: 0;
+      background: var(--color-bg, #141414);
+      border: 1px solid var(--color-border, #333);
+      border-radius: 8px;
       padding: 0.5rem 0.75rem;
       font-family: var(--font-mono, 'JetBrains Mono', monospace);
-      font-size: var(--text-sm, 0.875rem);
-      color: var(--color-text);
+      font-size: 0.8rem;
+      color: var(--color-text, #eee);
       outline: none;
-      transition: border-color 180ms;
+      transition: border-color 160ms;
     }
-    .pp-input:focus {
-      border-color: var(--color-primary);
-      box-shadow: 0 0 0 3px oklch(from var(--color-primary) l c h / 0.15);
-    }
-    .pp-input::placeholder { color: var(--color-text-faint); }
-    .pp-btn-go {
-      background: var(--color-primary);
-      color: #fff;
-      border: none;
-      border-radius: var(--radius-md, 0.5rem);
-      padding: 0.5rem 1rem;
-      font-size: var(--text-sm, 0.875rem);
-      font-weight: 600;
+    .pp-input:focus { border-color: var(--color-primary, #4f98a3); box-shadow: 0 0 0 3px oklch(from var(--color-primary, #4f98a3) l c h / 0.15); }
+    .pp-input::placeholder { color: var(--color-text-faint, #555); }
+
+    .pp-btn-browse {
+      flex-shrink: 0;
+      display: flex; align-items: center; gap: 0.4rem;
+      background: var(--color-surface-offset, #2a2a2a);
+      border: 1px solid var(--color-border, #333);
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem; font-weight: 500;
+      color: var(--color-text-muted, #999);
       cursor: pointer;
       white-space: nowrap;
-      transition: background 180ms, opacity 180ms;
+      transition: background 160ms, border-color 160ms, color 160ms;
     }
-    .pp-btn-go:hover { background: var(--color-primary-hover); }
-    .pp-btn-go:disabled { opacity: 0.5; cursor: not-allowed; }
-    .pp-recent-title {
-      font-size: var(--text-xs, 0.75rem);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--color-text-faint);
+    .pp-btn-browse:hover {
+      background: var(--color-surface-dynamic, #333);
+      border-color: var(--color-primary, #4f98a3);
+      color: var(--color-text, #eee);
     }
-    .pp-recent-list {
-      list-style: none; display: flex; flex-direction: column; gap: 0.25rem;
+
+    .pp-btn-open {
+      flex-shrink: 0;
+      background: var(--color-primary, #4f98a3);
+      border: none; border-radius: 8px;
+      padding: 0.5rem 1.1rem;
+      font-size: 0.85rem; font-weight: 600;
+      color: #fff; cursor: pointer;
+      white-space: nowrap;
+      transition: background 160ms, opacity 160ms;
     }
+    .pp-btn-open:hover { background: var(--color-primary-hover, #227f8b); }
+    .pp-btn-open:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── status ── */
+    .pp-status {
+      min-height: 1.2em;
+      font-size: 0.8rem;
+      color: var(--color-text-muted, #777);
+      display: flex; align-items: center; gap: 0.4rem;
+    }
+    .pp-status.error { color: var(--color-error, #d163a7); }
+    .pp-status.success { color: var(--color-success, #6daa45); }
+
+    /* ── recent ── */
+    .pp-section-label {
+      font-size: 0.7rem; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--color-text-faint, #555);
+      margin-bottom: 0.25rem;
+    }
+    .pp-recent-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
     .pp-recent-item {
       display: flex; align-items: center; gap: 0.5rem;
-      padding: 0.375rem 0.5rem;
-      border-radius: var(--radius-sm, 0.375rem);
-      cursor: pointer;
-      transition: background 150ms;
-      font-family: var(--font-mono, 'JetBrains Mono', monospace);
-      font-size: var(--text-xs, 0.75rem);
-      color: var(--color-text-muted);
+      padding: 0.35rem 0.5rem; border-radius: 6px; cursor: pointer;
+      font-family: var(--font-mono, monospace); font-size: 0.75rem;
+      color: var(--color-text-muted, #888);
+      transition: background 120ms, color 120ms;
       overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
     }
-    .pp-recent-item:hover { background: var(--color-surface-offset); color: var(--color-text); }
-    .pp-recent-item svg { flex-shrink: 0; opacity: 0.5; }
-    .pp-status {
-      font-size: var(--text-sm, 0.875rem);
-      min-height: 1.4em;
-      color: var(--color-text-muted);
-      display: flex; align-items: center; gap: 0.5rem;
-    }
-    .pp-status.error { color: var(--color-error); }
-    .pp-status.success { color: var(--color-success); }
-    .pp-hint {
-      font-size: var(--text-xs, 0.75rem);
-      color: var(--color-text-faint);
-      padding-top: 0.5rem;
-      border-top: 1px solid var(--color-divider);
-    }
+    .pp-recent-item:hover { background: var(--color-surface-offset, #2a2a2a); color: var(--color-text, #eee); }
+    .pp-recent-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-primary, #4f98a3); flex-shrink: 0; opacity: 0.6; }
+
+    /* ── divider ── */
+    .pp-divider { height: 1px; background: var(--color-divider, #2a2a2a); }
+
+    /* ── hint ── */
+    .pp-hint { font-size: 0.72rem; color: var(--color-text-faint, #555); line-height: 1.5; }
     .pp-hint code {
       font-family: var(--font-mono, monospace);
-      background: var(--color-surface-offset);
-      padding: 0.1em 0.35em;
-      border-radius: 3px;
+      background: var(--color-surface-offset, #2a2a2a);
+      padding: 0.1em 0.35em; border-radius: 3px;
+      color: var(--color-text-muted, #999);
     }
-    .pp-skip {
-      background: none;
-      border: none;
-      color: var(--color-text-faint);
-      font-size: var(--text-xs, 0.75rem);
-      cursor: pointer;
-      align-self: flex-end;
-      padding: 0;
-      transition: color 180ms;
+
+    /* ── file browser ── */
+    .fb-overlay {
+      position: fixed; inset: 0; z-index: 1100;
+      display: flex; align-items: center; justify-content: center;
+      background: oklch(0 0 0 / 0.65);
+      backdrop-filter: blur(4px);
+      opacity: 0; transition: opacity 180ms ease;
+      pointer-events: none;
     }
-    .pp-skip:hover { color: var(--color-text-muted); }
+    .fb-overlay.visible { opacity: 1; pointer-events: auto; }
+    .fb-modal {
+      background: var(--color-surface, #1e1e1e);
+      border: 1px solid var(--color-border, #333);
+      border-radius: 12px;
+      box-shadow: 0 40px 100px oklch(0 0 0 / 0.6);
+      width: min(580px, calc(100vw - 2rem));
+      height: min(480px, 80vh);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      transform: scale(0.96); transition: transform 180ms cubic-bezier(0.16,1,0.3,1);
+    }
+    .fb-overlay.visible .fb-modal { transform: scale(1); }
+
+    .fb-topbar {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--color-divider, #2a2a2a);
+      flex-shrink: 0;
+    }
+    .fb-topbar-title {
+      font-size: 0.8rem; font-weight: 600;
+      color: var(--color-text, #eee); flex-shrink: 0;
+    }
+    .fb-breadcrumb {
+      display: flex; align-items: center; gap: 0; flex: 1; min-width: 0;
+      overflow: hidden;
+    }
+    .fb-crumb {
+      font-size: 0.72rem; color: var(--color-text-muted, #888);
+      cursor: pointer; padding: 0.2rem 0.35rem; border-radius: 4px;
+      white-space: nowrap; transition: background 120ms, color 120ms;
+      max-width: 120px; overflow: hidden; text-overflow: ellipsis;
+    }
+    .fb-crumb:hover { background: var(--color-surface-offset, #2a2a2a); color: var(--color-text, #eee); }
+    .fb-crumb-sep { color: var(--color-text-faint, #555); font-size: 0.7rem; padding: 0 1px; flex-shrink: 0; }
+    .fb-close {
+      width: 26px; height: 26px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 5px; cursor: pointer;
+      color: var(--color-text-faint, #666);
+      transition: background 120ms, color 120ms;
+    }
+    .fb-close:hover { background: var(--color-surface-offset, #2a2a2a); color: var(--color-text, #eee); }
+
+    .fb-list {
+      flex: 1; overflow-y: auto; padding: 0.5rem;
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-surface-dynamic, #333) transparent;
+    }
+    .fb-empty {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; color: var(--color-text-faint, #555); font-size: 0.8rem;
+    }
+    .fb-item {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.45rem 0.75rem; border-radius: 6px; cursor: pointer;
+      font-size: 0.82rem; color: var(--color-text-muted, #999);
+      transition: background 120ms, color 120ms;
+      user-select: none;
+    }
+    .fb-item:hover { background: var(--color-surface-offset, #2a2a2a); color: var(--color-text, #eee); }
+    .fb-item.selected {
+      background: oklch(from var(--color-primary, #4f98a3) l c h / 0.18);
+      color: var(--color-text, #eee);
+      border: 1px solid oklch(from var(--color-primary, #4f98a3) l c h / 0.3);
+    }
+    .fb-item-icon { flex-shrink: 0; color: var(--color-primary, #4f98a3); opacity: 0.85; }
+    .fb-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .fb-bottombar {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      border-top: 1px solid var(--color-divider, #2a2a2a);
+      flex-shrink: 0;
+      background: var(--color-surface-offset, #1a1a1a);
+    }
+    .fb-selected-path {
+      flex: 1; min-width: 0;
+      font-family: var(--font-mono, monospace); font-size: 0.75rem;
+      color: var(--color-text-muted, #999);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .fb-selected-path.has-value { color: var(--color-text, #eee); }
+    .fb-btn-up {
+      display: flex; align-items: center; gap: 0.3rem;
+      background: none; border: 1px solid var(--color-border, #333);
+      border-radius: 6px; padding: 0.4rem 0.65rem;
+      font-size: 0.75rem; color: var(--color-text-muted, #888);
+      cursor: pointer; white-space: nowrap; flex-shrink: 0;
+      transition: background 150ms, color 150ms, border-color 150ms;
+    }
+    .fb-btn-up:hover { background: var(--color-surface-offset, #2a2a2a); border-color: var(--color-text-faint); color: var(--color-text, #eee); }
+    .fb-btn-up:disabled { opacity: 0.3; cursor: not-allowed; }
+    .fb-btn-select {
+      background: var(--color-primary, #4f98a3);
+      border: none; border-radius: 6px;
+      padding: 0.4rem 1rem;
+      font-size: 0.8rem; font-weight: 600;
+      color: #fff; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+      transition: background 150ms, opacity 150ms;
+    }
+    .fb-btn-select:hover { background: var(--color-primary-hover, #227f8b); }
+    .fb-btn-select:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .fb-loading {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; gap: 0.5rem;
+      color: var(--color-text-faint, #555); font-size: 0.8rem;
+    }
+    @keyframes fb-spin { to { transform: rotate(360deg); } }
+    .fb-spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--color-border, #333);
+      border-top-color: var(--color-primary, #4f98a3);
+      border-radius: 50%;
+      animation: fb-spin 0.7s linear infinite;
+    }
   `
   document.head.appendChild(s)
 }
 
-// ──────────────────────────────────────────────────────────────
+// ───────────────────────── File Browser
+
+interface BrowseResult {
+  ok: boolean
+  path: string
+  parent: string | null
+  sep: string
+  breadcrumbs: { label: string; path: string }[]
+  entries: { name: string; isDir: boolean }[]
+}
+
+let _fbOverlay: HTMLElement | null = null
+let _fbCurrentPath = ''
+let _fbSelectedPath = ''
+let _fbOnSelect: ((path: string) => void) | null = null
+
+async function _fbBrowse(path: string): Promise<BrowseResult | null> {
+  try {
+    const res = await fetch(`/fs/browse?path=${encodeURIComponent(path)}`)
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
+}
+
+function _fbRender(result: BrowseResult): void {
+  const topbar = _fbOverlay!.querySelector<HTMLElement>('.fb-topbar')!
+  const list = _fbOverlay!.querySelector<HTMLElement>('.fb-list')!
+  const selectedPathEl = _fbOverlay!.querySelector<HTMLElement>('.fb-selected-path')!
+  const btnSelect = _fbOverlay!.querySelector<HTMLButtonElement>('.fb-btn-select')!
+  const btnUp = _fbOverlay!.querySelector<HTMLButtonElement>('.fb-btn-up')!
+
+  _fbCurrentPath = result.path
+
+  // Breadcrumb
+  const breadcrumb = topbar.querySelector('.fb-breadcrumb')!
+  breadcrumb.innerHTML = result.breadcrumbs.map((c, i) =>
+    `<span class="fb-crumb" data-path="${c.path}">${c.label}</span>` +
+    (i < result.breadcrumbs.length - 1 ? `<span class="fb-crumb-sep">›</span>` : '')
+  ).join('')
+
+  breadcrumb.querySelectorAll<HTMLElement>('.fb-crumb').forEach((el) => {
+    el.addEventListener('click', () => _fbNavigate(el.dataset.path!))
+  })
+
+  // Up button
+  btnUp.disabled = !result.parent
+  btnUp.onclick = () => { if (result.parent) _fbNavigate(result.parent) }
+
+  // List
+  list.innerHTML = ''
+  if (result.entries.length === 0) {
+    list.innerHTML = '<div class="fb-empty">Папок нет</div>'
+  } else {
+    for (const entry of result.entries) {
+      const fullPath = result.path.endsWith(result.sep)
+        ? result.path + entry.name
+        : result.path + result.sep + entry.name
+
+      const item = document.createElement('div')
+      item.className = 'fb-item'
+      if (_fbSelectedPath === fullPath) item.classList.add('selected')
+      item.innerHTML = `
+        <span class="fb-item-icon">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/>
+          </svg>
+        </span>
+        <span class="fb-item-name">${entry.name}</span>
+      `
+
+      // Одиночный клик — выбрать
+      item.addEventListener('click', () => {
+        _fbOverlay!.querySelectorAll('.fb-item').forEach((i) => i.classList.remove('selected'))
+        item.classList.add('selected')
+        _fbSelectedPath = fullPath
+        selectedPathEl.textContent = fullPath
+        selectedPathEl.classList.add('has-value')
+        btnSelect.disabled = false
+      })
+
+      // Двойной клик — войти
+      item.addEventListener('dblclick', () => _fbNavigate(fullPath))
+
+      list.appendChild(item)
+    }
+  }
+
+  selectedPathEl.textContent = _fbSelectedPath || result.path
+  selectedPathEl.classList.toggle('has-value', !!_fbSelectedPath)
+  btnSelect.disabled = !_fbSelectedPath
+}
+
+async function _fbNavigate(path: string): Promise<void> {
+  const list = _fbOverlay!.querySelector<HTMLElement>('.fb-list')!
+  list.innerHTML = '<div class="fb-loading"><div class="fb-spinner"></div> Загрузка...</div>'
+
+  const result = await _fbBrowse(path)
+  if (!result || !result.ok) {
+    list.innerHTML = '<div class="fb-empty">Нет доступа к папке</div>'
+    return
+  }
+  _fbRender(result)
+}
+
+function _showFileBrowser(initialPath: string, onSelect: (path: string) => void): void {
+  if (_fbOverlay) return
+
+  _fbSelectedPath = ''
+  _fbOnSelect = onSelect
+
+  const overlay = document.createElement('div')
+  overlay.className = 'fb-overlay'
+  _fbOverlay = overlay
+
+  overlay.innerHTML = `
+    <div class="fb-modal">
+      <div class="fb-topbar">
+        <span class="fb-topbar-title">Выбор папки</span>
+        <div class="fb-breadcrumb"></div>
+        <div class="fb-close" title="Закрыть">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </div>
+      </div>
+      <div class="fb-list">
+        <div class="fb-loading"><div class="fb-spinner"></div> Загрузка...</div>
+      </div>
+      <div class="fb-bottombar">
+        <button class="fb-btn-up">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Вверх
+        </button>
+        <span class="fb-selected-path">Выберите папку...</span>
+        <button class="fb-btn-select" disabled>Выбрать</button>
+      </div>
+    </div>
+  `
+
+  overlay.querySelector('.fb-close')!.addEventListener('click', _hideFileBrowser)
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) _hideFileBrowser() })
+
+  overlay.querySelector('.fb-btn-select')!.addEventListener('click', () => {
+    if (_fbSelectedPath) {
+      _fbOnSelect?.(_fbSelectedPath)
+      _hideFileBrowser()
+    }
+  })
+
+  document.body.appendChild(overlay)
+  requestAnimationFrame(() => requestAnimationFrame(() => overlay.classList.add('visible')))
+
+  _fbNavigate(initialPath)
+}
+
+function _hideFileBrowser(): void {
+  if (!_fbOverlay) return
+  _fbOverlay.classList.remove('visible')
+  setTimeout(() => { _fbOverlay?.remove(); _fbOverlay = null }, 180)
+}
+
+// ───────────────────────── ProjectPicker modal
 
 let _overlay: HTMLElement | null = null
 let _input: HTMLInputElement | null = null
 let _statusEl: HTMLElement | null = null
 let _goBtn: HTMLButtonElement | null = null
-let _recentListEl: HTMLElement | null = null
 
 function _render(): void {
   injectStyles()
@@ -176,103 +472,103 @@ function _render(): void {
   overlay.className = 'pp-overlay'
   _overlay = overlay
 
-  overlay.innerHTML = `
-    <div class="pp-modal" role="dialog" aria-modal="true" aria-labelledby="pp-title">
-      <div class="pp-title">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-        </svg>
-        <span id="pp-title">Открыть проект</span>
-      </div>
-      <p class="pp-subtitle">Укажи путь к локальному репозиторию. Сервер просканирует его и построит граф.</p>
+  const recent = getRecent()
+  const recentHtml = recent.length > 0 ? `
+    <div>
+      <div class="pp-section-label">Недавние</div>
+      <ul class="pp-recent-list">
+        ${recent.map((p) => `
+          <li class="pp-recent-item" data-path="${p}">
+            <span class="pp-recent-dot"></span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p}</span>
+          </li>
+        `).join('')}
+      </ul>
+    </div>
+    <div class="pp-divider"></div>
+  ` : ''
 
-      <div class="pp-input-wrap">
-        <input
-          class="pp-input"
-          type="text"
-          placeholder="C:\\Users\\...\\my-project  или  /home/.../my-project"
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <button class="pp-btn-go">Открыть</button>
+  overlay.innerHTML = `
+    <div class="pp-modal" role="dialog" aria-modal="true">
+      <div class="pp-head">
+        <div class="pp-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          </svg>
+          Открыть проект
+        </div>
+        <div class="pp-close" title="Закрыть">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </div>
+      </div>
+
+      ${recentHtml}
+
+      <div class="pp-path-row">
+        <input class="pp-input" type="text" placeholder="/home/user/my-project" autocomplete="off" spellcheck="false" />
+        <button class="pp-btn-browse" title="Выбрать папку в проводнике">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <line x1="12" y1="12" x2="12" y2="18"/>
+            <line x1="9" y1="15" x2="15" y2="15"/>
+          </svg>
+          Обзор
+        </button>
+        <button class="pp-btn-open">Открыть</button>
       </div>
 
       <div class="pp-status"></div>
 
-      <div class="pp-recent-section" style="display:none">
-        <div class="pp-recent-title">Недавние</div>
-        <ul class="pp-recent-list"></ul>
-      </div>
-
+      <div class="pp-divider"></div>
       <div class="pp-hint">
-        Сервер должен быть запущен: <code>pnpm server</code><br/>
-        Или укажи проект сразу: <code>pnpm server --project C:\path\to\repo</code>
+        Запусти сервер: <code>pnpm server</code> — затем выбери папку выше.<br/>
+        Или сразу: <code>pnpm server --project /path/to/repo</code>
       </div>
-
-      <button class="pp-skip">Пропустить — подключусь вручную</button>
     </div>
   `
 
   _input = overlay.querySelector<HTMLInputElement>('.pp-input')!
   _statusEl = overlay.querySelector<HTMLElement>('.pp-status')!
-  _goBtn = overlay.querySelector<HTMLButtonElement>('.pp-btn-go')!
-  _recentListEl = overlay.querySelector<HTMLElement>('.pp-recent-list')!
-  const recentSection = overlay.querySelector<HTMLElement>('.pp-recent-section')!
-  const skipBtn = overlay.querySelector<HTMLButtonElement>('.pp-skip')!
+  _goBtn = overlay.querySelector<HTMLButtonElement>('.pp-btn-open')!
+  const browseBtn = overlay.querySelector<HTMLButtonElement>('.pp-btn-browse')!
 
-  // Заполнить недавние
-  const recent = getRecent()
-  if (recent.length > 0) {
-    recentSection.style.display = ''
-    recent.forEach((path) => {
-      const li = document.createElement('li')
-      li.className = 'pp-recent-item'
-      li.innerHTML = `
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="9 18 15 12 9 6"/>
-        </svg>
-        ${path}
-      `
-      li.title = path
-      li.addEventListener('click', () => {
-        if (_input) _input.value = path
-        _submit()
-      })
-      _recentListEl!.appendChild(li)
+  // Недавние
+  overlay.querySelectorAll<HTMLElement>('.pp-recent-item').forEach((li) => {
+    li.addEventListener('click', () => {
+      if (_input) _input.value = li.dataset.path ?? ''
+      _submit()
     })
-  }
-
-  // Enter в поле
-  _input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') _submit()
   })
 
+  // Браузер папок
+  browseBtn.addEventListener('click', () => {
+    const startPath = _input?.value.trim() || '/'
+    _showFileBrowser(startPath, (selectedPath) => {
+      if (_input) _input.value = selectedPath
+      _setStatus('', '')
+    })
+  })
+
+  _input.addEventListener('keydown', (e) => { if (e.key === 'Enter') _submit() })
   _goBtn.addEventListener('click', _submit)
+  overlay.querySelector('.pp-close')!.addEventListener('click', () => ProjectPicker.hide())
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) ProjectPicker.hide() })
 
-  skipBtn.addEventListener('click', () => ProjectPicker.hide())
-
-  // Закрытие по Escape
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') ProjectPicker.hide()
-  }
-  document.addEventListener('keydown', onKey)
-
+  document.addEventListener('keydown', _onEsc)
   document.body.appendChild(overlay)
-
-  // Анимация появления
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => overlay.classList.add('visible'))
-  })
-
+  requestAnimationFrame(() => requestAnimationFrame(() => overlay.classList.add('visible')))
   setTimeout(() => _input?.focus(), 250)
+}
+
+function _onEsc(e: KeyboardEvent): void {
+  if (e.key === 'Escape') { _hideFileBrowser(); ProjectPicker.hide() }
 }
 
 async function _submit(): Promise<void> {
   const path = _input?.value.trim()
-  if (!path) {
-    _setStatus('Укажи путь к проекту', 'error')
-    return
-  }
+  if (!path) { _setStatus('Укажи путь к проекту', 'error'); return }
 
   _setStatus('Подключаюсь...', '')
   if (_goBtn) _goBtn.disabled = true
@@ -283,18 +579,14 @@ async function _submit(): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectDir: path }),
     })
-
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
     }
-
     saveRecent(path)
     _setStatus('✓ Сервер сканирует проект...', 'success')
-
     emit('project:changed', path)
-
-    setTimeout(() => ProjectPicker.hide(), 800)
+    setTimeout(() => ProjectPicker.hide(), 700)
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     _setStatus(`Ошибка: ${msg}`, 'error')
@@ -308,29 +600,18 @@ function _setStatus(msg: string, type: '' | 'error' | 'success'): void {
   _statusEl.className = `pp-status${type ? ' ' + type : ''}`
 }
 
-// ──────────────────────────────────────────────────────────────
+// ───────────────────────── export
 
 export const ProjectPicker = {
-  mount(): void {
-    // Слушаем событие от wsClient когда нет соединения за 3с
-    on('project:pick:show', () => ProjectPicker.show())
-  },
-
-  show(): void {
-    if (_overlay) return // уже открыт
-    _render()
-  },
-
+  mount(): void { on('project:pick:show', () => ProjectPicker.show()) },
+  show(): void { if (_overlay) return; _render() },
   hide(): void {
+    document.removeEventListener('keydown', _onEsc)
     if (!_overlay) return
     _overlay.classList.remove('visible')
     setTimeout(() => {
-      _overlay?.remove()
-      _overlay = null
-      _input = null
-      _statusEl = null
-      _goBtn = null
-      _recentListEl = null
-    }, 220)
+      _overlay?.remove(); _overlay = null
+      _input = null; _statusEl = null; _goBtn = null
+    }, 200)
   },
 }

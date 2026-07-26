@@ -8,9 +8,8 @@ import { registerWs } from './ws/server.js'
 import { registerGraphRoutes } from './routes/graph.js'
 import { registerRebuildRoute } from './routes/rebuild.js'
 import { registerProjectRoutes } from './routes/project.js'
+import { registerFsBrowse } from './routes/fsBrowse.js'
 import { startWatcher } from './watcher.js'
-
-// ─── CLI args ────────────────────────────────────────────────────────────────
 
 function parseArgs(): { projectDir: string | null; port: number; watch: boolean } {
   const args = process.argv.slice(2)
@@ -33,8 +32,6 @@ function parseArgs(): { projectDir: string | null; port: number; watch: boolean 
   return { projectDir, port, watch }
 }
 
-// ─── Boot ────────────────────────────────────────────────────────────────────
-
 async function main(): Promise<void> {
   const { projectDir: cliProjectDir, port, watch } = parseArgs()
 
@@ -50,9 +47,6 @@ async function main(): Promise<void> {
     console.log('[server] no --project specified — waiting for UI to set project via POST /server/start')
   }
 
-  console.log(`[server] port: ${port}`)
-
-  // Build Fastify app
   const app = Fastify({ logger: false })
 
   await app.register(fastifyCors, {
@@ -62,20 +56,17 @@ async function main(): Promise<void> {
 
   await app.register(fastifyWebsocket)
 
-  // Register routes
   registerWs(app)
   registerGraphRoutes(app)
   registerRebuildRoute(app)
   registerProjectRoutes(app)
+  registerFsBrowse(app)
 
-  // Health check
   app.get('/health', async () => ({ ok: true, uptime: process.uptime() }))
 
-  // Start server
   await app.listen({ port, host: '127.0.0.1' })
   console.log(`[server] listening on http://localhost:${port}`)
 
-  // Initial scan (only if projectDir was provided via CLI)
   if (cliProjectDir) {
     console.log('[server] running initial scan...')
     try {
@@ -88,7 +79,6 @@ async function main(): Promise<void> {
     }
   }
 
-  // Graceful shutdown
   const shutdown = async (): Promise<void> => {
     console.log('[server] shutting down...')
     await app.close()
