@@ -1,121 +1,102 @@
 /**
  * eventBus.ts — Типизированная шина событий для layer-4-ui.
- *
- * Использование:
- *   on('node:select', (id) => { ... });
- *   emit('node:select', 'svc-backend');
- *   off('node:select', handler);
- *   once('graph:refresh', () => { ... });
- *
- * События:
- *   UI-действия:     node:select, node:deselect,
- *                        dataflow:toggle, dataflow:next, graph:refresh
- *   Cytoscape:           cy:ready, cy:fit
- *   Sidebar:             sidebar:filter, sidebar:collapsed
- *   WS-состояние:  ws:connected, ws:disconnected, ws:error
- *   Тема:              theme:changed
  */
 
 import type { GraphModel, GraphDiff } from '../../../shared/src/graph.js'
 
+// ----------------------------------------------------------------- edge tooltip payload
+
+export interface EdgeHoverPayload {
+  edgeId:       string
+  method:       string
+  path:         string
+  inputSchema:  string
+  outputSchema: string
+  x:            number
+  y:            number
+}
+
+export interface EdgeMovePayload {
+  x: number
+  y: number
+}
+
 // ----------------------------------------------------------------- event map
 
 export interface EventMap {
-  // ---- Выбор узла ————————————————————
-  /** Клик на узел (сайдбар, cy tap) → все подписчики обновляют состояние */
+  // ---- Выбор узла
   'node:select':         string
-  /** Клик по фону / ESC / кнопка × в DetailPanel */
   'node:deselect':       undefined
 
-  // ---- DataFlow-режим ————————————————
-  /** true = включить, false = выключить */
+  // ---- Ребра
+  'edge:mouseover':      EdgeHoverPayload
+  'edge:mousemove':      EdgeMovePayload
+  'edge:mouseout':       undefined
+
+  // ---- DataFlow
   'dataflow:toggle':     boolean
-  /** Переключить на следующий предустановленный путь (0→1→2→0) */
   'dataflow:next':       undefined
 
-  // ---- Граф ——————————————————————
-  /** Полный снимок графа от layer-3 */
+  // ---- Граф
   'graph:full':          GraphModel
-  /** Инкрементальное обновление */
   'graph:update':        { diff: GraphDiff; changedAt: number }
-  /** Ручной rebuild через кнопку Refresh в Header */
   'graph:refresh':       undefined
-  /** Ошибка сервера */
   'graph:error':         string
+  'graph:layout':        string
 
-  // ---- Cytoscape ———————————————————
-  /** Canvas эмитит после инициализации cy */
+  // ---- Cytoscape
   'cy:ready':            unknown
-  /** Header эмитит при нажатии «⊡ Fit» → Canvas вызывает cy.fit(60) */
   'cy:fit':              undefined
 
-  // ---- Sidebar —————————————————————
-  /**
-   * Sidebar эмитит после применения фильтра/поиска.
-   * payload — Set<nodeId> видимых узлов (Canvas скрывает/показывает узлы cy).
-   */
+  // ---- Canvas
+  'canvas:pan-mode':     boolean
+
+  // ---- Zoom
+  'zoom:in':             null
+  'zoom:out':            null
+  'zoom:reset':          null
+
+  // ---- Sidebar
   'sidebar:filter':      Set<string>
-  /**
-   * Sidebar эмитит при collapse/expand.
-   * payload: true = свёрнут, false = развёрнут.
-   */
   'sidebar:collapsed':   boolean
 
-  // ---- WS-состояние ————————————————
+  // ---- WS
   'ws:connected':        undefined
   'ws:disconnected':     undefined
   'ws:error':            Event | unknown
 
-  // ---- Тема ———————————————————————
+  // ---- Тема
   'theme:changed':       'dark' | 'light'
 }
 
 export type EventKey = keyof EventMap
 type Handler<K extends EventKey> = (payload: EventMap[K]) => void
 
-// ---------------------------------------------------------------- storage
-
 const _listeners: { [K in EventKey]?: Set<Handler<K>> } = {}
 
-// ---------------------------------------------------------------- public API
-
-/** Подписаться на событие. Возвращает функцию-отписку. */
 export function on<K extends EventKey>(event: K, handler: Handler<K>): () => void {
-  if (!_listeners[event]) {
-    (_listeners as any)[event] = new Set()
-  }
+  if (!_listeners[event]) (_listeners as any)[event] = new Set()
   ;(_listeners[event] as Set<Handler<K>>).add(handler)
   return () => off(event, handler)
 }
 
-/** Отписаться от события. */
 export function off<K extends EventKey>(event: K, handler: Handler<K>): void {
   ;(_listeners[event] as Set<Handler<K>> | undefined)?.delete(handler)
 }
 
-/** Подписаться на одно срабатывание. */
 export function once<K extends EventKey>(event: K, handler: Handler<K>): () => void {
-  const wrapper: Handler<K> = (payload) => {
-    handler(payload)
-    off(event, wrapper)
-  }
+  const wrapper: Handler<K> = (payload) => { handler(payload); off(event, wrapper) }
   return on(event, wrapper)
 }
 
-/** Эмитить событие. Ошибки в хандлерах перехватываются и логируются без сбоя остальных. */
 export function emit<K extends EventKey>(event: K, payload: EventMap[K]): void {
   const handlers = _listeners[event] as Set<Handler<K>> | undefined
   if (!handlers) return
   for (const handler of handlers) {
-    try {
-      handler(payload)
-    } catch (err) {
-      console.error(`[eventBus] Error in handler for '${event}':`, err)
-    }
+    try { handler(payload) } catch (err) { console.error(`[eventBus] '${event}':`, err) }
   }
 }
 
-/** Удалить всех слушателей события (для cleanup / тестов). */
 export function clear(event: EventKey): void {
   delete _listeners[event]
 }
