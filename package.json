@@ -17,8 +17,8 @@
     "dev": "pnpm -r run dev",
     "typecheck": "pnpm -r run typecheck",
     "clean": "pnpm -r run clean",
-    "ui": "pnpm --filter @smart-map/layer-4-ui dev --open",
-    "server": "pnpm --filter @smart-map/layer-3-server dev"
+    "ui": "pnpm --filter @smart-map/layer-4-ui run dev -- --open",
+    "server": "tsx layer-3-server/src/index.ts"
   },
   "engines": {
     "node": ">=18.0.0",
