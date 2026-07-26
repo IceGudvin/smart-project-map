@@ -6,6 +6,35 @@
 
 ---
 
+## [2026-07-26] — Референсный проект Leadway, детализация Python/FastAPI слоя
+
+### Добавлено
+- **Раздел «Референсный проект: Leadway»** в `CONCEPT.md` — реальный production-проект как основной тест-кейс для всех слоёв
+- Таблица стека Leadway: FastAPI 0.111, SQLAlchemy 2.0, PostgreSQL (asyncpg), Redis (aioredis), MinIO, PyJWT, Next.js, Zustand, Docker
+- Структура `backend/app/` с пояснением каждой папки (routers → services → models → schemas → core → integrations)
+- Конкретный data-flow пример `POST /auth/login` для Layer 5: LoginRequest → bcrypt verify → JWT → Redis cache → frontend Bearer header
+
+### Изменено
+- **Layer 1 (Parser)** — детализирован Python/FastAPI extractor:
+  - Паттерны `ast-grep` для `@router.post(...)`, `@router.get(...)`, `@app.post(...)`
+  - Парсинг Pydantic v2 моделей из `schemas/` (поля, типы, required)
+  - Автосвязка роута с `response_model` → `inputSchema` + `outputSchema`
+  - Распознавание инфраструктурных сервисов из `backend/.env`: `DATABASE_URL` → PostgreSQL, `REDIS_URL` → Redis, `MINIO_ENDPOINT` → MinIO
+  - Инструменты: `ast-grep` (Python grammar) как основной, `libcst` для сложного анализа
+- **Layer 1** — обновлён `RawParserOutput`: добавлены поля `language` и `framework`
+- **Layer 2 (Graph Builder)** — Resolver расширен: теперь распознаёт инфраструктурные узлы (PostgreSQL, Redis, MinIO) из `.env`, не только сервисы приложения
+- **Layer 4 (UI)** — добавлена логика визуального различия узлов по `nodeType`: service (прямоугольник), infrastructure (цилиндр/шестиугольник), external (пунктирная граница)
+- **shared/ — тип `ServiceNode`** — добавлены два новых поля:
+  - `framework: 'fastapi' | 'express' | 'fastify' | 'nestjs' | 'nextjs' | 'gin' | 'unknown'`
+  - `nodeType: 'service' | 'infrastructure' | 'external'`
+- **Roadmap** — MVP теперь явно включает Python/FastAPI парсер наравне с TypeScript парсером
+- **Layer 4, пример dagre-лейаута** — обновлён под Leadway: `frontend (Next.js) → FastAPI backend → PostgreSQL / Redis / MinIO`
+
+### Зафиксировано в репо
+- `CONCEPT.md` — коммит `02b6992` (точечные правки, старые разделы не тронуты)
+
+---
+
 ## [2026-07-26] — Инициализация проекта, концепция и архитектура
 
 ### Добавлено
