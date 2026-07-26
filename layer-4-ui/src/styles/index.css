@@ -1,16 +1,7 @@
-/* Точка входа для стилей — импортирует всю дизайн-систему */
+/*
+ * index.css — Точка входа дизайн-системы.
+ * Импортируется в main.ts перед любыми CSS компонентов.
+ */
 
-/* 1. Токены — должны идти первыми */
 @import './tokens.css';
-
-/* 2. Reset + базовые стили */
 @import './base.css';
-
-/* 3. Компоненты (добавляются по мере реализации) */
-/* @import '../components/AppShell/AppShell.css'; */
-/* @import '../components/Header/Header.css'; */
-/* @import '../components/Sidebar/Sidebar.css'; */
-/* @import '../components/Canvas/Canvas.css'; */
-/* @import '../components/DetailPanel/DetailPanel.css'; */
-/* @import '../components/EdgeTooltip/EdgeTooltip.css'; */
-/* @import '../components/ui/ui.css'; */

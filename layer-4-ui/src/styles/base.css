@@ -1,4 +1,7 @@
-/* base.css — reset + базовые стили */
+/*
+ * base.css — Reset + base styles.
+ * Импортируется после tokens.css.
+ */
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -11,93 +14,58 @@ html {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   text-size-adjust: none;
-  height: 100%;
+  hanging-punctuation: first last;
 }
 
 body {
+  min-height: 100dvh;
   font-family: var(--font-body);
   font-size: var(--text-sm);
   color: var(--text);
-  background: var(--bg);
-  height: 100dvh;
-  overflow: hidden;
+  background-color: var(--bg);
   line-height: 1.5;
+  overflow: hidden; /* управляет AppShell */
 }
 
-img, svg { display: block; max-width: 100%; }
+img, picture, video, canvas, svg {
+  display: block;
+  max-width: 100%;
+}
 
-input, button, textarea, select {
+button, input, select, textarea {
   font: inherit;
   color: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
 }
 
-button { cursor: pointer; background: none; border: none; }
-
-/* Focus ring */
-:focus-visible {
+button:focus-visible,
+[tabindex]:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar { width: 4px; height: 4px; }
+::selection {
+  background: color-mix(in oklch, var(--primary) 20%, transparent);
+  color: var(--text);
+}
+
+/* --------------------------------------------- Scrollbars */
+::-webkit-scrollbar       { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: var(--surface-dynamic);
+  background: var(--divider);
   border-radius: var(--radius-full);
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
 
-/* Selection */
-::selection {
-  background: var(--primary-dim);
-  color: var(--text);
-}
-
-/* Reduced motion */
+/* ---------------------------------------- Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-}
-
-/* Interactive transition base */
-a, button, [role='button'] {
-  transition:
-    color var(--transition),
-    background var(--transition),
-    border-color var(--transition),
-    box-shadow var(--transition),
-    opacity var(--transition);
-}
-
-/* Utility */
-.sr-only {
-  position: absolute; width: 1px; height: 1px;
-  padding: 0; margin: -1px; overflow: hidden;
-  clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;
-}
-
-/* Dot-grid canvas background */
-.canvas-bg {
-  background-color: var(--bg);
-  background-image: radial-gradient(
-    circle,
-    var(--border) 1px,
-    transparent 1px
-  );
-  background-size: 24px 24px;
-  /* Radial vignette fade */
-  -webkit-mask-image: radial-gradient(
-    ellipse 80% 80% at 50% 50%,
-    black 50%,
-    transparent 100%
-  );
-  mask-image: radial-gradient(
-    ellipse 80% 80% at 50% 50%,
-    black 50%,
-    transparent 100%
-  );
 }
