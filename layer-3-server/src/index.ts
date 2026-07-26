@@ -7,13 +7,14 @@ import { setProjectDir, runScan } from './scanner.js'
 import { registerWs } from './ws/server.js'
 import { registerGraphRoutes } from './routes/graph.js'
 import { registerRebuildRoute } from './routes/rebuild.js'
+import { registerProjectRoutes } from './routes/project.js'
 import { startWatcher } from './watcher.js'
 
-// ─── CLI args ─────────────────────────────────────────────────────────────────
+// ─── CLI args ────────────────────────────────────────────────────────────────
 
-function parseArgs(): { projectDir: string; port: number; watch: boolean } {
+function parseArgs(): { projectDir: string | null; port: number; watch: boolean } {
   const args = process.argv.slice(2)
-  let projectDir = process.cwd()
+  let projectDir: string | null = null
   let port = 3001
   let watch = true
 
@@ -32,21 +33,24 @@ function parseArgs(): { projectDir: string; port: number; watch: boolean } {
   return { projectDir, port, watch }
 }
 
-// ─── Boot ─────────────────────────────────────────────────────────────────────
+// ─── Boot ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const { projectDir, port, watch } = parseArgs()
+  const { projectDir: cliProjectDir, port, watch } = parseArgs()
 
-  if (!existsSync(projectDir)) {
-    console.error(`[server] project directory not found: ${projectDir}`)
+  if (cliProjectDir && !existsSync(cliProjectDir)) {
+    console.error(`[server] project directory not found: ${cliProjectDir}`)
     process.exit(1)
   }
 
-  console.log(`[server] project: ${projectDir}`)
-  console.log(`[server] port:    ${port}`)
+  if (cliProjectDir) {
+    console.log(`[server] project: ${cliProjectDir}`)
+    setProjectDir(cliProjectDir)
+  } else {
+    console.log('[server] no --project specified — waiting for UI to set project via POST /server/start')
+  }
 
-  // Configure scanner
-  setProjectDir(projectDir)
+  console.log(`[server] port: ${port}`)
 
   // Build Fastify app
   const app = Fastify({ logger: false })
@@ -62,6 +66,7 @@ async function main(): Promise<void> {
   registerWs(app)
   registerGraphRoutes(app)
   registerRebuildRoute(app)
+  registerProjectRoutes(app)
 
   // Health check
   app.get('/health', async () => ({ ok: true, uptime: process.uptime() }))
@@ -70,19 +75,17 @@ async function main(): Promise<void> {
   await app.listen({ port, host: '127.0.0.1' })
   console.log(`[server] listening on http://localhost:${port}`)
 
-  // Initial scan
-  console.log('[server] running initial scan...')
-  try {
-    const { graph } = await runScan()
-    console.log(`[server] initial scan complete: ${graph.nodes.length} nodes, ${graph.edges.length} edges`)
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[server] initial scan failed (server still running):', message)
-  }
-
-  // File watcher
-  if (watch) {
-    startWatcher(projectDir)
+  // Initial scan (only if projectDir was provided via CLI)
+  if (cliProjectDir) {
+    console.log('[server] running initial scan...')
+    try {
+      const { graph } = await runScan()
+      console.log(`[server] initial scan complete: ${graph.nodes.length} nodes, ${graph.edges.length} edges`)
+      if (watch) startWatcher(cliProjectDir)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[server] initial scan failed (server still running):', message)
+    }
   }
 
   // Graceful shutdown
