@@ -1,57 +1,16 @@
-/*
- * Smart Project Map — Style Entry Point
- * Import order matters: tokens → base → component overrides
- */
+/* Точка входа для стилей — импортирует всю дизайн-систему */
 
+/* 1. Токены — должны идти первыми */
 @import './tokens.css';
+
+/* 2. Reset + базовые стили */
 @import './base.css';
 
-/*
- * Component-level styles are co-located with their .tsx files as CSS Modules.
- * Global overrides for third-party libs (cytoscape) live here.
- */
-
-/* ─── Cytoscape canvas override ──────────────────────────────────────────── */
-.cy-container {
-  width: 100%;
-  height: 100%;
-  background: var(--canvas-bg);
-  /* Dot-grid pattern */
-  background-image: radial-gradient(
-    circle,
-    var(--canvas-dot) var(--canvas-dot-size),
-    transparent var(--canvas-dot-size)
-  );
-  background-size: var(--canvas-dot-gap) var(--canvas-dot-gap);
-  /* Radial vignette over the dot grid */
-  background-blend-mode: normal;
-  position: relative;
-}
-
-.cy-container::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    ellipse 80% 80% at 50% 50%,
-    transparent 40%,
-    var(--canvas-bg) 100%
-  );
-  pointer-events: none;
-}
-
-/* ─── Cytoscape tooltip popper ───────────────────────────────────────────── */
-.cy-tooltip {
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  padding: var(--space-3) var(--space-4);
-  box-shadow: var(--shadow-lg);
-  font-size: var(--text-xs);
-  color: var(--text);
-  pointer-events: none;
-  z-index: 1000;
-  max-width: 280px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
+/* 3. Компоненты (добавляются по мере реализации) */
+/* @import '../components/AppShell/AppShell.css'; */
+/* @import '../components/Header/Header.css'; */
+/* @import '../components/Sidebar/Sidebar.css'; */
+/* @import '../components/Canvas/Canvas.css'; */
+/* @import '../components/DetailPanel/DetailPanel.css'; */
+/* @import '../components/EdgeTooltip/EdgeTooltip.css'; */
+/* @import '../components/ui/ui.css'; */

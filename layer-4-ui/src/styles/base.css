@@ -1,7 +1,4 @@
-/*
- * Smart Project Map — Base Reset & Foundation Styles
- * Applied globally. Components build on top of this.
- */
+/* base.css — reset + базовые стили */
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -13,95 +10,61 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  -moz-text-size-adjust: none;
-  -webkit-text-size-adjust: none;
   text-size-adjust: none;
-  scroll-behavior: smooth;
   height: 100%;
 }
 
 body {
   font-family: var(--font-body);
   font-size: var(--text-sm);
-  line-height: 1.5;
   color: var(--text);
   background: var(--bg);
-  height: 100%;
-  overflow: hidden; /* App shell controls scroll regions */
+  height: 100dvh;
+  overflow: hidden;
+  line-height: 1.5;
 }
 
-#root {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-img, picture, video, canvas, svg {
-  display: block;
-  max-width: 100%;
-}
+img, svg { display: block; max-width: 100%; }
 
 input, button, textarea, select {
   font: inherit;
   color: inherit;
 }
 
-button {
-  cursor: pointer;
-  background: none;
-  border: none;
-  padding: 0;
-}
+button { cursor: pointer; background: none; border: none; }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-p, li {
-  text-wrap: pretty;
-}
-
-h1, h2, h3, h4, h5, h6 {
-  text-wrap: balance;
-  line-height: 1.2;
-  font-weight: 500;
-}
-
-/* ─── Focus ring ─────────────────────────────────────────────────────────── */
+/* Focus ring */
 :focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
 
-/* ─── Selection ──────────────────────────────────────────────────────────── */
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--surface-dynamic);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+/* Selection */
 ::selection {
-  background: var(--primary-hl);
+  background: var(--primary-dim);
   color: var(--text);
 }
 
-/* ─── Scrollbars ─────────────────────────────────────────────────────────── */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-full);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-faint);
-}
-
-/* ─── Interactive element transitions ────────────────────────────────────── */
-a, button, [role="button"] {
+/* Interactive transition base */
+a, button, [role='button'] {
   transition:
     color var(--transition),
     background var(--transition),
@@ -110,34 +73,31 @@ a, button, [role="button"] {
     opacity var(--transition);
 }
 
-/* ─── Reduced motion ─────────────────────────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* ─── Utility classes ────────────────────────────────────────────────────── */
+/* Utility */
 .sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;
 }
 
-.truncate {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.font-mono {
-  font-family: var(--font-mono);
+/* Dot-grid canvas background */
+.canvas-bg {
+  background-color: var(--bg);
+  background-image: radial-gradient(
+    circle,
+    var(--border) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+  /* Radial vignette fade */
+  -webkit-mask-image: radial-gradient(
+    ellipse 80% 80% at 50% 50%,
+    black 50%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 80% 80% at 50% 50%,
+    black 50%,
+    transparent 100%
+  );
 }

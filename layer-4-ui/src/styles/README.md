@@ -1,49 +1,39 @@
-# `src/styles/` — Дизайн-система
-
-Вся глобальная стилизация Smart Project Map. Подключается через `index.css`.
+# src/styles — Дизайн-система
 
 ## Файлы
 
-### `tokens.css`
-CSS-переменные — единственный источник правды для визуальных решений.
+| Файл | Назначение |
+|---|---|
+| `tokens.css` | CSS-переменные: тип, отступы, цвета (light/dark), радиусы, тени, переходы |
+| `base.css` | Reset + базовые стили тела, скроллбаров, фокус-кольца, фона канваса |
+| `index.css` | Точка входа: импортирует tokens → base → компоненты |
 
-| Группа | Переменные | Примечания |
-|---|---|---|
-| Шрифты | `--font-body`, `--font-mono` | Geist + JetBrains Mono |
-| Типографика | `--text-xs` … `--text-xl` | Fluid clamp(), 12px floor |
-| Отступы | `--space-1` … `--space-16` | 4px grid |
-| Радиусы | `--radius-sm` … `--radius-full` | 4 / 8 / 12 / 16 / ∞ px |
-| Переходы | `--ease-*`, `--duration-*`, `--transition` | Goldener ease-out |
-| Поверхности | `--bg`, `--surface`, `--surface-2`, `--surface-off`, `--surface-dyn` | 5 уровней глубины |
-| Текст | `--text`, `--text-muted`, `--text-faint`, `--text-inverse` | 3 уровня + инверсия |
-| Акцент | `--primary`, `--primary-h`, `--primary-hl`, `--primary-subtle` | Hydra Teal |
-| Семантика | `--success`, `--warning`, `--error` + `*-hl` | + highlight-варианты |
-| Граф | `--node-service`, `--node-infra`, `--node-cache`, `--node-external` | Цвета узлов |
-| Рёбра | `--edge-default`, `--edge-active` | |
-| HTTP-методы | `--method-get/post/put/patch/delete` | |
-| Тени | `--shadow-sm/md/lg/xl` | Двухслойные, тон-matched |
-| Канвас | `--canvas-bg`, `--canvas-dot`, `--canvas-dot-size`, `--canvas-dot-gap` | Dot-grid |
+## Дизайн-токены
 
-**Темизация:** `[data-theme="dark"]` на `<html>`. По умолчанию — `prefers-color-scheme`.
+### Типографика
+- `--font-body` — Geist (UI, навигация, метаданные)
+- `--font-mono` — JetBrains Mono (пути, методы, схемы)
+- `--text-xs / sm / base / lg` — fluid type scale через `clamp()`
 
-### `base.css`
-Reset + базовые стили. Не содержит цветов — только структуру.
-- Box-sizing, font smoothing, scroll behavior
-- Убирает лишние margin/padding у кнопок, ссылок, инпутов
-- Задаёт `overflow: hidden` на `body` — скролл только внутри scroll-регионов
-- Глобальные scrollbar-стили (6px, закруглённые)
-- `:focus-visible` ring через `--primary`
-- `.sr-only`, `.truncate`, `.font-mono` — базовые утилиты
+### Цвета
+Двойной режим (light/dark) через `[data-theme]` на `<html>`.
 
-### `index.css`
-Точка входа. Порядок импорта: `tokens.css` → `base.css`.
-Содержит глобальные overrides для Cytoscape:
-- `.cy-container` — dot-grid background + radial vignette
-- `.cy-tooltip` — glassmorphism tooltip
+- **Поверхности**: `--bg → --surface → --surface-2 → --surface-off` (глубина слоёв)
+- **Акцент**: `--primary` (Hydra Teal) — только для интерактивных элементов, активных состояний
+- **Семантика**: `--success / --warning / --error` — для статусов
+- **DataViz**: `--viz-blue / purple / gold / green / red` — для типов узлов и рёбер на графе
 
-## Принципы
+### Отступы
+4px-система: `--space-1` (4px) → `--space-12` (48px).
 
-- Никаких магических чисел вне `tokens.css`
-- Компонентные стили — CSS Modules рядом с `.tsx`
-- Никаких `!important` кроме `prefers-reduced-motion`
-- Цвета — только через переменные, никаких hex в компонентах
+### Радиусы
+`--radius-sm` (4px) для тегов → `--radius-2xl` (16px) для плавающих панелей.
+
+### Анимация
+- `--ease-out` — большинство transitions (hover, появление)
+- `--ease-spring` — pop-анимации (появление tooltip, панели)
+- `--duration-fast/base/slow` — 120 / 180 / 280ms
+
+## Фон канваса
+
+Класс `.canvas-bg` на `#cy` создаёт dot-grid с виньеткой через CSS `mask-image`.

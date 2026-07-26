@@ -1,231 +1,160 @@
 /*
- * Smart Project Map — Design Tokens
- * Art direction: developer tool / graph explorer → precision, calm, technical
- * Palette: near-black surfaces + teal accent (Hydra Teal)
- * Typography: Geist (body) + JetBrains Mono (code)
- * Density: dense — this is a data-heavy tool
+ * Art direction: Developer tool → technical precision, confidence
+ * Palette: near-black surfaces, teal primary accent (matches brand from concept)
+ * Typography: Geist (body/UI) + JetBrains Mono (code/paths)
+ * Density: dense — developer tool, data-rich
  */
 
-/* ─── Font faces ──────────────────────────────────────────────────────────── */
 :root {
+  /* ─── Type scale (fluid) ─────────────────────────────────────────────────── */
+  --text-xs:   clamp(0.75rem,  0.7rem  + 0.25vw, 0.875rem);
+  --text-sm:   clamp(0.875rem, 0.8rem  + 0.35vw, 1rem);
+  --text-base: clamp(1rem,     0.95rem + 0.25vw, 1.125rem);
+  --text-lg:   clamp(1.125rem, 1rem    + 0.75vw, 1.5rem);
+
+  /* ─── Font families ─────────────────────────────────────────────────────── */
   --font-body: 'Geist', 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-}
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 
-/* ─── Type scale (fluid clamp) ───────────────────────────────────────────── */
-:root {
-  --text-xs:   clamp(0.75rem,  0.7rem  + 0.25vw, 0.875rem); /* 12–14px */
-  --text-sm:   clamp(0.875rem, 0.8rem  + 0.35vw, 1rem);     /* 14–16px */
-  --text-base: clamp(1rem,     0.95rem + 0.25vw, 1.125rem); /* 16–18px */
-  --text-lg:   clamp(1.125rem, 1rem    + 0.75vw, 1.5rem);   /* 18–24px */
-  --text-xl:   clamp(1.5rem,   1.2rem  + 1.25vw, 2.25rem);  /* 24–36px */
-}
+  /* ─── 4px spacing system ────────────────────────────────────────────────── */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
 
-/* ─── 4px spacing system ─────────────────────────────────────────────────── */
-:root {
-  --space-1:  0.25rem;  /*  4px */
-  --space-2:  0.5rem;   /*  8px */
-  --space-3:  0.75rem;  /* 12px */
-  --space-4:  1rem;     /* 16px */
-  --space-5:  1.25rem;  /* 20px */
-  --space-6:  1.5rem;   /* 24px */
-  --space-8:  2rem;     /* 32px */
-  --space-10: 2.5rem;   /* 40px */
-  --space-12: 3rem;     /* 48px */
-  --space-16: 4rem;     /* 64px */
-}
+  /* ─── Border radius ─────────────────────────────────────────────────────── */
+  --radius-sm:   0.25rem;  /* 4px  — tiny: badges, tags */
+  --radius-md:   0.375rem; /* 6px  — inputs, small cards */
+  --radius-lg:   0.5rem;   /* 8px  — panels, cards */
+  --radius-xl:   0.75rem;  /* 12px — large panels, modals */
+  --radius-2xl:  1rem;     /* 16px — floating surfaces */
+  --radius-full: 9999px;   /* pill */
 
-/* ─── Border radius ──────────────────────────────────────────────────────── */
-:root {
-  --radius-sm:   0.25rem;  /*  4px */
-  --radius-md:   0.5rem;   /*  8px */
-  --radius-lg:   0.75rem;  /* 12px */
-  --radius-xl:   1rem;     /* 16px */
-  --radius-full: 9999px;
-}
-
-/* ─── Transitions ────────────────────────────────────────────────────────── */
-:root {
-  --ease-out:  cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in:   cubic-bezier(0.4, 0, 1, 1);
-  --ease-snap: cubic-bezier(0.34, 1.56, 0.64, 1); /* slight overshoot */
+  /* ─── Transitions ────────────────────────────────────────────────────────── */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:     cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --duration-fast:   120ms;
-  --duration-normal: 200ms;
-  --duration-slow:   350ms;
-  --transition:      var(--duration-normal) var(--ease-out);
+  --duration-base:   180ms;
+  --duration-slow:   280ms;
+  --transition: var(--duration-base) var(--ease-out);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   LIGHT THEME
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ─── Light mode ─────────────────────────────────────────────────────────── */
 :root,
-[data-theme="light"] {
+[data-theme='light'] {
   /* Surfaces */
-  --bg:              #f7f6f2;
-  --surface:         #f9f8f5;
-  --surface-2:       #fbfbf9;
-  --surface-off:     #f0ede8;
-  --surface-dyn:     #e6e4df;
-  --divider:         #dcd9d5;
-  --border:          rgba(40, 37, 29, 0.10);
-  --border-strong:   rgba(40, 37, 29, 0.20);
+  --bg:              #f5f4f1;
+  --surface:         #faf9f7;
+  --surface-2:       #ffffff;
+  --surface-off:     #eeecea;
+  --surface-dynamic: #e4e2de;
+
+  /* Borders & dividers */
+  --border:   oklch(from #28251d l c h / 0.10);
+  --divider:  #e0ddd8;
 
   /* Text */
-  --text:            #28251d;
-  --text-muted:      #7a7974;
-  --text-faint:      #bab9b4;
-  --text-inverse:    #f9f8f4;
+  --text:       #1a1916;
+  --text-muted: #6b6a66;
+  --text-faint: #b0afa9;
 
   /* Primary accent — Hydra Teal */
-  --primary:         #01696f;
-  --primary-h:       #0c4e54;
-  --primary-active:  #0f3638;
-  --primary-hl:      #cedcd8;
-  --primary-subtle:  rgba(1, 105, 111, 0.08);
+  --primary:    #01696f;
+  --primary-h:  #0c4e54;
+  --primary-hl: #d4e8e6;
+  --primary-dim: oklch(from #01696f l c h / 0.12);
 
-  /* Semantic */
-  --success:         #437a22;
-  --success-hl:      rgba(67, 122, 34, 0.12);
-  --warning:         #964219;
-  --warning-hl:      rgba(150, 66, 25, 0.12);
-  --error:           #a12c7b;
-  --error-hl:        rgba(161, 44, 123, 0.12);
+  /* Semantic colours */
+  --success:    #437a22;
+  --success-hl: #d4dfcc;
+  --warning:    #964219;
+  --warning-hl: #ddcfc6;
+  --error:      #a12c7b;
+  --error-hl:   #e0ced7;
 
-  /* Data viz (for graph node types) */
-  --node-service:    #01696f;
-  --node-infra:      #437a22;
-  --node-cache:      #964219;
-  --node-external:   #7a39bb;
-  --edge-default:    rgba(1, 105, 111, 0.45);
-  --edge-active:     #01696f;
-
-  /* HTTP method colours */
-  --method-get:      #437a22;
-  --method-post:     #d19900;
-  --method-put:      #006494;
-  --method-patch:    #7a39bb;
-  --method-delete:   #a12c7b;
+  /* DataViz palette (edges / node types) */
+  --viz-blue:   #006494;
+  --viz-purple: #7a39bb;
+  --viz-gold:   #d19900;
+  --viz-green:  #437a22;
+  --viz-red:    #a13544;
 
   /* Shadows */
-  --shadow-sm:  0 1px 2px rgba(40, 37, 29, 0.06);
-  --shadow-md:  0 4px 12px rgba(40, 37, 29, 0.08), 0 1px 3px rgba(40, 37, 29, 0.05);
-  --shadow-lg:  0 12px 32px rgba(40, 37, 29, 0.12), 0 2px 6px rgba(40, 37, 29, 0.06);
-  --shadow-xl:  0 24px 48px rgba(40, 37, 29, 0.16), 0 4px 12px rgba(40, 37, 29, 0.08);
-
-  /* Canvas */
-  --canvas-bg:       #f2f1ed;
-  --canvas-dot:      rgba(40, 37, 29, 0.15);
-  --canvas-dot-size: 1.5px;
-  --canvas-dot-gap:  24px;
+  --shadow-sm: 0 1px 2px oklch(0.2 0.01 80 / 0.06);
+  --shadow-md: 0 4px 12px oklch(0.2 0.01 80 / 0.08), 0 1px 3px oklch(0.2 0.01 80 / 0.05);
+  --shadow-lg: 0 12px 32px oklch(0.2 0.01 80 / 0.12), 0 2px 8px oklch(0.2 0.01 80 / 0.06);
+  --shadow-inset: inset 0 1px 2px oklch(0.2 0.01 80 / 0.06);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   DARK THEME
-   ═══════════════════════════════════════════════════════════════════════════ */
-[data-theme="dark"] {
+/* ─── Dark mode ──────────────────────────────────────────────────────────── */
+[data-theme='dark'] {
   /* Surfaces */
-  --bg:              #0f0e0d;
-  --surface:         #141312;
-  --surface-2:       #1a1917;
-  --surface-off:     #1e1d1b;
-  --surface-dyn:     #282725;
-  --divider:         #222120;
-  --border:          rgba(255, 255, 255, 0.07);
-  --border-strong:   rgba(255, 255, 255, 0.14);
+  --bg:              #111110;
+  --surface:         #161614;
+  --surface-2:       #1c1b19;
+  --surface-off:     #1f1e1c;
+  --surface-dynamic: #2a2927;
+
+  /* Borders & dividers */
+  --border:   oklch(from #cdccca l c h / 0.09);
+  --divider:  #242321;
 
   /* Text */
-  --text:            #d4d3d1;
-  --text-muted:      #737270;
-  --text-faint:      #504f4e;
-  --text-inverse:    #141312;
+  --text:       #e8e7e4;
+  --text-muted: #6f6e6b;
+  --text-faint: #4a4947;
 
-  /* Primary accent — Hydra Teal (brighter in dark) */
-  --primary:         #3d9ca8;
-  --primary-h:       #1e8a96;
-  --primary-active:  #156b76;
-  --primary-hl:      rgba(61, 156, 168, 0.12);
-  --primary-subtle:  rgba(61, 156, 168, 0.06);
+  /* Primary accent — Hydra Teal (lighter in dark) */
+  --primary:    #4f98a3;
+  --primary-h:  #6ab4c0;
+  --primary-hl: #1e3234;
+  --primary-dim: oklch(from #4f98a3 l c h / 0.14);
 
-  /* Semantic */
-  --success:         #5fa336;
-  --success-hl:      rgba(95, 163, 54, 0.12);
-  --warning:         #b05f38;
-  --warning-hl:      rgba(176, 95, 56, 0.12);
-  --error:           #c45a9e;
-  --error-hl:        rgba(196, 90, 158, 0.12);
+  /* Semantic colours */
+  --success:    #6daa45;
+  --success-hl: #1e3019;
+  --warning:    #d07a40;
+  --warning-hl: #2e1e10;
+  --error:      #d163a7;
+  --error-hl:   #2e1020;
 
-  /* Data viz */
-  --node-service:    #3d9ca8;
-  --node-infra:      #5fa336;
-  --node-cache:      #b05f38;
-  --node-external:   #9b65d6;
-  --edge-default:    rgba(61, 156, 168, 0.35);
-  --edge-active:     #3d9ca8;
-
-  /* HTTP method colours */
-  --method-get:      #5fa336;
-  --method-post:     #e0aa30;
-  --method-put:      #5591c7;
-  --method-patch:    #9b65d6;
-  --method-delete:   #c45a9e;
+  /* DataViz palette */
+  --viz-blue:   #5591c7;
+  --viz-purple: #a86fdf;
+  --viz-gold:   #e8af34;
+  --viz-green:  #6daa45;
+  --viz-red:    #dd6974;
 
   /* Shadows (glow-based in dark) */
-  --shadow-sm:  0 1px 2px rgba(0, 0, 0, 0.25);
-  --shadow-md:  0 4px 16px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
-  --shadow-lg:  0 12px 36px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
-  --shadow-xl:  0 24px 56px rgba(0, 0, 0, 0.55), 0 4px 16px rgba(0, 0, 0, 0.3);
-
-  /* Canvas */
-  --canvas-bg:       #0c0b0a;
-  --canvas-dot:      rgba(255, 255, 255, 0.06);
-  --canvas-dot-size: 1.5px;
-  --canvas-dot-gap:  24px;
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.25);
+  --shadow-md: 0 4px 16px oklch(0 0 0 / 0.35), 0 1px 4px oklch(0 0 0 / 0.2);
+  --shadow-lg: 0 16px 48px oklch(0 0 0 / 0.5), 0 4px 16px oklch(0 0 0 / 0.3);
+  --shadow-inset: inset 0 1px 0 oklch(1 0 0 / 0.04);
 }
 
 /* ─── System preference fallback ─────────────────────────────────────────── */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --bg:              #0f0e0d;
-    --surface:         #141312;
-    --surface-2:       #1a1917;
-    --surface-off:     #1e1d1b;
-    --surface-dyn:     #282725;
-    --divider:         #222120;
-    --border:          rgba(255, 255, 255, 0.07);
-    --border-strong:   rgba(255, 255, 255, 0.14);
-    --text:            #d4d3d1;
-    --text-muted:      #737270;
-    --text-faint:      #504f4e;
-    --text-inverse:    #141312;
-    --primary:         #3d9ca8;
-    --primary-h:       #1e8a96;
-    --primary-active:  #156b76;
-    --primary-hl:      rgba(61, 156, 168, 0.12);
-    --primary-subtle:  rgba(61, 156, 168, 0.06);
-    --success:         #5fa336;
-    --success-hl:      rgba(95, 163, 54, 0.12);
-    --warning:         #b05f38;
-    --warning-hl:      rgba(176, 95, 56, 0.12);
-    --error:           #c45a9e;
-    --error-hl:        rgba(196, 90, 158, 0.12);
-    --node-service:    #3d9ca8;
-    --node-infra:      #5fa336;
-    --node-cache:      #b05f38;
-    --node-external:   #9b65d6;
-    --edge-default:    rgba(61, 156, 168, 0.35);
-    --edge-active:     #3d9ca8;
-    --method-get:      #5fa336;
-    --method-post:     #e0aa30;
-    --method-put:      #5591c7;
-    --method-patch:    #9b65d6;
-    --method-delete:   #c45a9e;
-    --shadow-sm:  0 1px 2px rgba(0, 0, 0, 0.25);
-    --shadow-md:  0 4px 16px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
-    --shadow-lg:  0 12px 36px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
-    --shadow-xl:  0 24px 56px rgba(0, 0, 0, 0.55), 0 4px 16px rgba(0, 0, 0, 0.3);
-    --canvas-bg:       #0c0b0a;
-    --canvas-dot:      rgba(255, 255, 255, 0.06);
-    --canvas-dot-size: 1.5px;
-    --canvas-dot-gap:  24px;
+    --bg: #111110; --surface: #161614; --surface-2: #1c1b19;
+    --surface-off: #1f1e1c; --surface-dynamic: #2a2927;
+    --border: oklch(from #cdccca l c h / 0.09); --divider: #242321;
+    --text: #e8e7e4; --text-muted: #6f6e6b; --text-faint: #4a4947;
+    --primary: #4f98a3; --primary-h: #6ab4c0; --primary-hl: #1e3234;
+    --primary-dim: oklch(from #4f98a3 l c h / 0.14);
+    --success: #6daa45; --success-hl: #1e3019;
+    --warning: #d07a40; --warning-hl: #2e1e10;
+    --error: #d163a7; --error-hl: #2e1020;
+    --viz-blue: #5591c7; --viz-purple: #a86fdf;
+    --viz-gold: #e8af34; --viz-green: #6daa45; --viz-red: #dd6974;
+    --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.25);
+    --shadow-md: 0 4px 16px oklch(0 0 0 / 0.35), 0 1px 4px oklch(0 0 0 / 0.2);
+    --shadow-lg: 0 16px 48px oklch(0 0 0 / 0.5), 0 4px 16px oklch(0 0 0 / 0.3);
+    --shadow-inset: inset 0 1px 0 oklch(1 0 0 / 0.04);
   }
 }
