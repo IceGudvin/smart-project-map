@@ -1,119 +1,96 @@
 /**
- * Legend — левый ниж, glassmorphism.
- * Показывает 3 типа узлов с формами Cytoscape:
- *   ☐ Service   — roundrectangle
- *   ○ Database  — ellipse
- *   ⬡ Cache     — hexagon (diamond)
+ * Legend — glassmorphism pill снизу слева: Service · Database · Cache
  */
 
-function injectLegendStyles(): void {
-  if (document.getElementById('legend-styles')) return
-  const s = document.createElement('style')
-  s.id = 'legend-styles'
-  s.textContent = `
-    .canvas-legend {
-      position: absolute;
-      bottom: var(--space-4, 1rem);
-      left:   var(--space-4, 1rem);
-      z-index: 10;
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-2, 0.5rem);
-      padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
-      border-radius: var(--radius-lg, 0.75rem);
-      font-size: var(--text-xs, 0.75rem);
-      color: var(--color-text-muted);
-      pointer-events: none;
-      /* glassmorphism */
-      background: var(--glass-bg,
-        oklch(from var(--color-surface, #f9f8f5) l c h / 0.80));
-      backdrop-filter: blur(var(--glass-blur, 12px))
-                       saturate(var(--glass-saturate, 1.6));
-      -webkit-backdrop-filter: blur(var(--glass-blur, 12px))
-                                saturate(var(--glass-saturate, 1.6));
-      border: 1px solid var(--glass-border,
-        oklch(from var(--color-border, #d4d1ca) l c h / 0.5));
-      box-shadow: var(--glass-shadow,
-        0 1px 0 rgba(255,255,255,0.05) inset,
-        0 8px 24px rgba(0,0,0,0.18));
-    }
+const CSS = `
+.canvas-legend {
+  position: absolute;
+  bottom: var(--space-4);
+  left: var(--space-4);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  pointer-events: none;
+  user-select: none;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* Service — скруглённый прямоугольник */
+.legend-shape--service {
+  width: 16px; height: 10px;
+  border-radius: 3px;
+  background: var(--color-primary);
+  opacity: 0.9;
+}
+/* Database — эллипс */
+.legend-shape--database {
+  width: 14px; height: 10px;
+  border-radius: 50%;
+  background: var(--color-gold, #d19900);
+  opacity: 0.9;
+}
+/* Cache — hexagon (CSS clip-path) */
+.legend-shape--cache {
+  width: 14px; height: 14px;
+  background: var(--color-purple, #7a39bb);
+  opacity: 0.9;
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+}
+.legend-dot-sep {
+  display: inline-block;
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: var(--color-text-faint);
+}
+`;
 
-    .legend-item {
-      display: flex;
-      align-items: center;
-      gap: var(--space-2, 0.5rem);
-    }
-
-    /* Формы-чипсы повторяют Cytoscape-шапы узлов */
-    .legend-shape {
-      width: 14px;
-      height: 14px;
-      flex-shrink: 0;
-      opacity: 0.7;
-    }
-    /* Service = закруглённый прямоугольник */
-    .legend-shape--service {
-      background: var(--color-primary);
-      border-radius: var(--radius-sm, 0.375rem);
-    }
-    /* Database = круг */
-    .legend-shape--database {
-      background: var(--color-blue, #006494);
-      border-radius: 50%;
-    }
-    /* Cache/Queue = ромб (CSS-клиппинг) */
-    .legend-shape--cache {
-      background: var(--color-gold, #d19900);
-      clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-    }
-
-    .legend-title {
-      font-size: var(--text-xs, 0.75rem);
-      font-weight: 600;
-      color: var(--color-text-faint);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: var(--space-1, 0.25rem);
-    }
-  `
-  document.head.appendChild(s)
+function inject() {
+  if (document.getElementById('canvas-legend-css')) return;
+  const s = document.createElement('style'); s.id = 'canvas-legend-css';
+  s.textContent = CSS; document.head.appendChild(s);
 }
 
 const ITEMS = [
-  { shape: 'service',  label: 'Service'  },
-  { shape: 'database', label: 'Database' },
-  { shape: 'cache',    label: 'Cache / Queue' },
-] as const
+  { cls: 'legend-shape--service',  label: 'Service'  },
+  { cls: 'legend-shape--database', label: 'Database' },
+  { cls: 'legend-shape--cache',    label: 'Cache'    },
+] as const;
 
-export class Legend {
-  mount(container: HTMLElement): void {
-    injectLegendStyles()
+export const Legend = {
+  mount(parent: HTMLElement) {
+    inject();
+    const el = document.createElement('div');
+    el.className = 'canvas-legend';
+    el.setAttribute('aria-label', 'Легенда типов узлов');
 
-    const el = document.createElement('div')
-    el.className = 'canvas-legend'
-    el.setAttribute('aria-label', 'Легенда типов узлов')
+    ITEMS.forEach((item, i) => {
+      if (i > 0) el.appendChild(Object.assign(document.createElement('span'), { className: 'legend-dot-sep' }));
+      const li = document.createElement('div');
+      li.className = 'legend-item';
+      const shape = document.createElement('div');
+      shape.className = `legend-shape--${item.cls.split('--')[1]}`;
+      shape.setAttribute('aria-hidden', 'true');
+      const lbl = document.createElement('span');
+      lbl.textContent = item.label;
+      li.appendChild(shape); li.appendChild(lbl);
+      el.appendChild(li);
+    });
 
-    const title = document.createElement('div')
-    title.className = 'legend-title'
-    title.textContent = 'Node types'
-    el.appendChild(title)
-
-    for (const { shape, label } of ITEMS) {
-      const row = document.createElement('div')
-      row.className = 'legend-item'
-
-      const chip = document.createElement('span')
-      chip.className = `legend-shape legend-shape--${shape}`
-      chip.setAttribute('aria-hidden', 'true')
-
-      const text = document.createElement('span')
-      text.textContent = label
-
-      row.appendChild(chip)
-      row.appendChild(text)
-      el.appendChild(row)
-    }
-
-    container.appendChild(el)
-  }
-}
+    parent.appendChild(el);
+    return this;
+  },
+};
