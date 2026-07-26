@@ -1,4 +1,4 @@
-import chokidar from 'chokidar'
+import chokidar, { type FSWatcher } from 'chokidar'
 import { runScan } from './scanner.js'
 import { broadcastFull, broadcastPatch } from './ws/server.js'
 
@@ -13,9 +13,24 @@ const IGNORE_PATTERNS = [
 ]
 
 let _debounceTimer: ReturnType<typeof setTimeout> | null = null
+let _watcher: FSWatcher | null = null
+
+/**
+ * Останавливает текущий watcher (если есть) и сбрасывает debounce-таймер.
+ * Нужно вызывать перед startWatcher() при смене projectDir.
+ */
+export function stopWatcher(): void {
+  if (_debounceTimer) { clearTimeout(_debounceTimer); _debounceTimer = null }
+  if (_watcher) {
+    void _watcher.close().catch((err) => console.error('[watcher] close error:', err))
+    _watcher = null
+  }
+}
 
 export function startWatcher(projectDir: string): void {
-  const watcher = chokidar.watch(projectDir, {
+  stopWatcher() // гарантируем, что предыдущий уже закрыт
+
+  _watcher = chokidar.watch(projectDir, {
     ignored: (path: string) => IGNORE_PATTERNS.some((p) => p.test(path)),
     ignoreInitial: true,
     persistent: true,
@@ -41,7 +56,7 @@ export function startWatcher(projectDir: string): void {
     }, DEBOUNCE_MS)
   }
 
-  watcher
+  _watcher
     .on('add', triggerRebuild)
     .on('change', triggerRebuild)
     .on('unlink', triggerRebuild)
