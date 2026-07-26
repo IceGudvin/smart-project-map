@@ -1,3 +1,39 @@
+## [2026-07-26] — Layer 4: cytoscapeInit + nodeData — полная реализация (Issue #6)
+
+### Добавлено
+- `layer-4-ui/src/graph/cytoscapeInit.ts` — **полная реализация**:
+  - Dagre layout: `rankDir: TB`, `nodeSep: 80`, `rankSep: 100`, `padding: 60`
+  - Формы узлов по `nodeType`: `service` → `roundrectangle`, DB-инфра → `ellipse`, Cache/Queue-инфра → `hexagon`
+  - Фоновые иконки: `background-image: url(https://cdn.simpleicons.org/{slug}/ffffff)` с `background-fit: contain`, `background-clip: none`; маппинг `ICON_SLUG` для nextdotjs, fastapi, postgresql, redis, minio и других
+  - Состояния `highlighted` / `dimmed` с `transition-property` + `transition-duration: 200ms`
+  - Дополнительно: `hover` класс, `node:selected`, сброс иконок у `dimmed`-узлов
+  - DataFlow анимация: `line-dash-pattern: [10, 6]` + JS-таймер `setInterval 40ms`, обновляющий `line-dash-offset` (≈25fps)
+  - `startDashAnimation` / `stopDashAnimation` — запуск/остановка таймера
+  - `DATAFLOW_PATHS[3]` — три предустановленных пути: Login Flow, File Upload, Auth Check
+  - `applyDataflowHighlight(cy, 0|1|2)` — highlighted/dimmed через `cy.batch()`
+  - `clearDataflowHighlight(cy)` — сброс классов
+  - `highlightSelected(cy, nodeId)` — подсветка узла + соседей
+  - `syncGraph(cy, graph, isDark)` — инкрементальный diff (add/remove) без пересоздания
+  - `updateTheme(cy, isDark)` — пересборка stylesheet при смене темы
+  - `runLayout(cy, direction)` — повторный запуск layout
+  - Обработчики событий: `tap node` → `emit('node:select')`, `tap background` → `emit('node:deselect')`, `mouseover/mouseout node` → `hover`-класс + cursor, `mouseover/mousemove/mouseout edge` → `emit('edge:mouseover|mousemove|mouseout')` для EdgeTooltip
+  - `emit('cy:ready', cy)` после инициализации
+
+- `layer-4-ui/src/graph/nodeData.ts` — **полная реализация**:
+  - `mapNodeToDetail(node, allNodes)` — маппинг живого `ServiceNode` из `GraphModel` → `NodeDetailData` для Detail Panel
+  - `resolveNodeData(node, allNodes)` — приоритет live-данных (routes/schemas от парсера), фоллбэк на статику
+  - `getNodeData(id)` — статический фоллбэк по id
+  - `STATIC_FALLBACK` — демо-данные для frontend/backend/postgres/redis/minio
+  - `iconSlug` (Simple Icons CDN) + `iconEmoji` (UTF-8 фоллбэк)
+  - `depNodeIds[]` — id целевых узлов для `node:select` при клике на dep-item
+  - `frameworkSub()` — подзаголовок: `FastAPI · Python` из live-данных
+
+### Зафиксировано в репо
+- Roadmap: Issue #6 (чекбоксы 🎯 Cytoscape + граф отмечены ✅)
+- Коммит: `e0d0d95`
+
+---
+
 ## [2026-07-26] — Layer 4: стили — dot-grid + glassmorphism (Issue #6)
 
 ### Добавлено
