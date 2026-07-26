@@ -1,0 +1,55 @@
+/*
+ * dataflow.css — CSS DataFlow режима.
+ *
+ * Подключается в index.css.
+ * Содержит:
+ *   - @keyframes df-dash — для будущей интеграции (SVG-оверлей)
+ *   - Стили .df-active / .dimmed для не-cy элементов
+ *   - Текст пути в StatsBar и Header
+ */
+
+/* ---- Keyframes (используются DataFlowMode._startDash через JS) ----------- */
+@keyframes df-dash {
+  to { stroke-dashoffset: -24; }
+}
+
+/* ---- Оверлей StatusBar: имя активного пути ------------------------------ */
+.df-path-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  background: color-mix(in oklab, var(--color-primary) 15%, transparent);
+  color: var(--color-primary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-family: var(--font-body);
+  white-space: nowrap;
+
+  /* Мигающий dot */
+  &::before {
+    content: '';
+    display: block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    animation: df-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes df-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.8); }
+}
+
+/* ---- Overlay для .dimmed Sidebar-элементов (если нужно) ------------------ */
+.df-mode-active .service-item:not(.df-active) {
+  opacity: 0.35;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.df-mode-active .service-item.df-active {
+  opacity: 1;
+}

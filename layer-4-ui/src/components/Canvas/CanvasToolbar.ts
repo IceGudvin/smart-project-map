@@ -1,9 +1,13 @@
 /**
- * CanvasToolbar — glassmorphism pill по центру сверху (под StatsBar)
- * Кнопки: Pan | DataFlow [path name] ⟳ Next | Layout
+ * CanvasToolbar — glassmorphism pill по центру сверху (под StatsBar).
+ * Кнопки: Pan | DataFlow [имя пути] ⟳ Next | Layout
+ *
+ * dataflow:toggle теперь не оркестрирует подсветку —
+ * это делает DataFlowMode.ts.
+ * CanvasToolbar только обновляет свой UI-статус.
  */
-import { emit } from '../../lib/eventBus';
-import { store } from '../../store';
+import { emit, on } from '../../lib/eventBus.js';
+import { store, DATAFLOW_PATHS, type DataflowPathIndex } from '../../store.js';
 
 const CSS = `
 .canvas-toolbar {
@@ -62,6 +66,7 @@ const CSS = `
   max-width: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: opacity 0.15s ease;
 }
 `;
 
@@ -73,14 +78,14 @@ function inject() {
   document.head.appendChild(s);
 }
 
-const LAYOUTS = ['TB', 'LR', 'circle'] as const;
+const LAYOUTS = ['TB', 'LR'] as const;
 type Layout = typeof LAYOUTS[number];
 let _layoutIdx = 0;
 
 export const CanvasToolbar = {
   _btnDataflow: null as HTMLButtonElement | null,
-  _pathLabel: null as HTMLElement | null,
-  _dfActive: false,
+  _pathLabel:   null as HTMLElement | null,
+  _dfActive:    false,
 
   mount(parent: HTMLElement) {
     inject();
@@ -95,45 +100,51 @@ export const CanvasToolbar = {
     btnPan.className = 'toolbar-btn';
     btnPan.setAttribute('aria-pressed', 'false');
     btnPan.title = 'Режим панорамирования (пробел)';
-    btnPan.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    btnPan.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2">
       <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3"/>
       <path d="M2 12h20M12 2v20"/>
     </svg> Pan`;
     el.appendChild(btnPan);
 
-    el.appendChild(Object.assign(document.createElement('div'), { className: 'toolbar-sep' }));
+    el.appendChild(_sep());
 
-    // --- DataFlow
+    // --- DataFlow toggle
     const btnDf = document.createElement('button');
     btnDf.className = 'toolbar-btn';
     btnDf.setAttribute('aria-pressed', 'false');
     btnDf.title = 'DataFlow-режим';
     const pathLabel = document.createElement('span');
     pathLabel.className = 'toolbar-btn__path';
-    pathLabel.textContent = '';
-    btnDf.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    btnDf.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2">
       <path d="M12 2l9 4.5V18L12 22l-9-5.5V6.5z"/>
       <path d="M12 22V12M3 6.5l9 5.5 9-5.5"/>
     </svg> DataFlow `;
     btnDf.appendChild(pathLabel);
     this._btnDataflow = btnDf;
-    this._pathLabel = pathLabel;
+    this._pathLabel   = pathLabel;
     el.appendChild(btnDf);
 
-    // ⟳ Next
+    // ⟳ Next path
     const btnNext = document.createElement('button');
     btnNext.className = 'toolbar-btn';
-    btnNext.title = 'Следующий шаг DataFlow';
-    btnNext.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>`;
+    btnNext.title = 'Следующий DataFlow-путь';
+    btnNext.setAttribute('aria-label', 'Следующий путь');
+    btnNext.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2.5">
+      <path d="M5 12h14M13 6l6 6-6 6"/>
+    </svg>`;
     el.appendChild(btnNext);
 
-    el.appendChild(Object.assign(document.createElement('div'), { className: 'toolbar-sep' }));
+    el.appendChild(_sep());
 
-    // --- Layout
+    // --- Layout cycle
     const btnLayout = document.createElement('button');
     btnLayout.className = 'toolbar-btn';
-    btnLayout.title = 'Сменить раскладку';
-    btnLayout.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    btnLayout.title = 'Сменить разкладку';
+    btnLayout.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2">
       <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
       <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
     </svg> Layout`;
@@ -141,7 +152,8 @@ export const CanvasToolbar = {
 
     parent.appendChild(el);
 
-    // --- handlers ---
+    // --- Handlers
+
     btnPan.addEventListener('click', () => {
       const pressed = btnPan.getAttribute('aria-pressed') === 'true';
       btnPan.setAttribute('aria-pressed', String(!pressed));
@@ -151,38 +163,50 @@ export const CanvasToolbar = {
 
     btnDf.addEventListener('click', () => {
       this._dfActive = !this._dfActive;
+      // DataFlowMode.ts слушает и делает всю работу
       emit('dataflow:toggle', this._dfActive);
+      this._syncDfBtn();
     });
 
     btnNext.addEventListener('click', () => {
-      if (!this._dfActive) return;
-      const paths = store.dataflowPaths;
-      if (!paths.length) return;
-      store.dataflowIdx = (store.dataflowIdx + 1) % paths[store.dataflowPathIndex]?.steps?.length;
-      emit('dataflow:next', store.dataflowIdx);
+      if (!store.dataflowMode) return;
+      emit('dataflow:next', undefined);
     });
 
     btnLayout.addEventListener('click', () => {
       _layoutIdx = (_layoutIdx + 1) % LAYOUTS.length;
-      const layout = LAYOUTS[_layoutIdx];
-      emit('graph:layout', layout);
+      emit('graph:layout', LAYOUTS[_layoutIdx]);
+    });
+
+    // Синхронизация при смене пути изнутри DataFlowMode
+    on('dataflow:toggle', (active) => {
+      this._dfActive = active;
+      this._syncDfBtn();
     });
 
     return this;
   },
 
-  setDataflow(active: boolean) {
-    this._dfActive = active;
-    if (!this._btnDataflow) return;
-    this._btnDataflow.setAttribute('aria-pressed', String(active));
-    this._btnDataflow.classList.toggle('toolbar-btn--active', active);
+  _syncDfBtn(): void {
+    const btn = this._btnDataflow;
+    const lbl = this._pathLabel;
+    if (!btn) return;
+    btn.setAttribute('aria-pressed', String(this._dfActive));
+    btn.classList.toggle('toolbar-btn--active', this._dfActive);
+    if (lbl) {
+      const idx = store.activeDataflowPath as DataflowPathIndex;
+      lbl.textContent = this._dfActive
+        ? DATAFLOW_PATHS[idx]
+        : '';
+    }
   },
 
-  syncDataflowPath(idx: number) {
-    if (!this._pathLabel) return;
-    const paths = store.dataflowPaths;
-    const path = paths[store.dataflowPathIndex];
-    const step = path?.steps?.[idx];
-    this._pathLabel.textContent = step?.label ?? '';
+  /** Вызывается из AppShell при смене пути */
+  syncPathLabel(): void {
+    this._syncDfBtn();
   },
 };
+
+function _sep(): HTMLElement {
+  return Object.assign(document.createElement('div'), { className: 'toolbar-sep' });
+}
