@@ -1,0 +1,27 @@
+{
+  "name": "@smart-map/layer-3-server",
+  "version": "0.1.0",
+  "description": "Layer 3: Fastify Server + WebSocket — serves GraphModel via REST and WebSocket",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@fastify/websocket": "^10.0.0",
+    "fastify": "^5.0.0",
+    "@smart-map/shared": "workspace:*",
+    "@smart-map/layer-1-parser": "workspace:*",
+    "@smart-map/layer-2-graph": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  }
+}
