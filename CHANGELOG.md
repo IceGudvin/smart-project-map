@@ -1,3 +1,33 @@
+## [2026-07-26] — Русификация UI + фиксы экспортов + SVG-иконки Legend (Issue #6)
+
+### Добавлено
+- `Legend.ts` — SVG-иконки для всех трёх типов узлов:
+  - Сервис — 2×2 сетка блоков (micro-schema)
+  - БД — цилиндр с двумя кольцами
+  - Кэш — гексагон с внутренним вырезом
+- `Sidebar/index.ts` — кнопка collapse: заменен символ `⟨` на анимированный SVG double-chevron `«`;
+  поворот 180° через `.sb-chevron` + CSS `.collapsed`; видимая рамка + hover-подсветка
+
+### Исправлено
+- `Legend.ts` — удалён несуществующий `import { injectOnce }` — Vite бросал `import-analysis` error
+- `CanvasToolbar.ts` и `Legend.ts` — возвращён экспорт в формате `export const X = { mount() }` —
+  предыдущий патч переименовал экспорт в функцию, что вызвало `SyntaxError` белый экран
+
+### Русифицировано
+- `Header` — `live`→`активен`, `Refresh`→`Обновить`, `Fit`→`Вписать`, статусы `подключение`/`отключён`/`ошибка`
+- `CanvasToolbar` — `Pan`→`Пан`, `DataFlow`→`Поток`, `Layout`→`Раскладка`, разметки `Дерево`/`Граф`/`Сетка`
+- `FilterBar` — `All`→`Все`, `Service`→`Сервисы`, `Infra`→`Инфра`
+- `Legend` — `Service`→`Сервис`, `Database`→`БД`, `Cache`→`Кэш`
+
+### Зафиксировано в репо
+- Коммит: `e000458` — русификация Header
+- Коммит: `f508cbe` — русификация CanvasToolbar + FilterBar + Legend
+- Коммит: `77e4cb2` — fix Legend.ts import
+- Коммит: `ce4f7d3` — fix export формата CanvasToolbar + Legend
+- Коммит: `ff926df` — SVG-иконки Legend + animated collapse chevron
+
+---
+
 ## [2026-07-26] — Bugfix: AppShell — TypeError: X is not a constructor (Issue #6)
 
 ### Исправлено
@@ -5,10 +35,10 @@
 - `new Canvas(canvasWrapEl)` → `Canvas.mount(canvasWrapEl)`
 - `new DetailPanel()` → `DetailPanel.mount(dpEl)`
 - `new EdgeTooltip()` → `EdgeTooltip.mount()` (сам монтируется в body)
-- `new Sidebar(sidebarEl)` → `new Sidebar()` + `sidebar.mount(sidebarEl)` (у Sidebar нет аргумента в конструкторе, el передаётся в `mount(el)`)
+- `new Sidebar(sidebarEl)` → `new Sidebar()` + `sidebar.mount(sidebarEl)`
 - `this.sidebar.update()` → `this.sidebar.update(store.graph)` (метод требует `GraphModel`)
 - `this.canvas.update()` — удалён (метод не существует, Canvas реагирует через eventBus)
-- `theme:changed` — добавлен `document.documentElement.setAttribute('data-theme', theme)` (не пропускали CSS-тему)
+- `theme:changed` — добавлен `document.documentElement.setAttribute('data-theme', theme)`
 - `sidebar:collapsed` — AppShell теперь синхронизирует `.app-sidebar.collapsed` класс
 
 ### Зафиксировано в репо
@@ -22,22 +52,14 @@
 ### Добавлено
 - `eventBus.ts` — два новых события:
   - `graph:rebuild:start` — эмитится Header при нажатии Refresh (блокирует кнопку)
-  - `graph:rebuild:done(updatedAt: number)` — эмитится после завершения `POST /graph/rebuild`;
-    payload — миллисекундный timestamp из заголовка `X-Updated-At` сервера
-- `AppShell/index.ts` — хелпер `parseUpdatedAt(res)`: читает `X-Updated-At` из HTTP-ответа;
-  использует его если `data.updatedAt === 0`; обработчик `graph:rebuild:done` обновляет Header
+  - `graph:rebuild:done(updatedAt: number)` — эмитится после завершения `POST /graph/rebuild`
+- `AppShell/index.ts` — хелпер `parseUpdatedAt(res)`: читает `X-Updated-At` из HTTP-ответа
 - `Header/index.ts`:
-  - `_doRebuild()`: читает `X-Updated-At` из response headers + `body.updatedAt` (приоритет);
-    fallback → `Date.now()`; эмитит `graph:rebuild:start` / `graph:rebuild:done`
-  - `_setUpdatedAt(ts, flash)`: flash=true → анимирует `.hdr-updated` зелёным на 1.5 с после rebuild
-  - CSS `.hdr-updated.flash-ok` — `transition: color 300ms`
-  - `destroy()` — очищает `_flashTimer`
+  - `_doRebuild()`: читает `X-Updated-At` из response headers
+  - `_setUpdatedAt(ts, flash)`: flash=true → анимация зелёным
 
 ### Исправлено
-- `vite.config.ts` — proxy исправлен:
-  - `/ws` → `ws://localhost:3001` (порт сервера, было 3000)
-  - `/graph` → `http://localhost:3001` (новый маршрут; было `/api`)
-- Все три подзадачи 🛠 Интеграция layer-3-server отмечены ✅ в Issue #6
+- `vite.config.ts` — proxy исправлен: `/ws` → `ws://localhost:3001`, `/graph` → `http://localhost:3001`
 
 ### Зафиксировано в репо
 - Коммит: `e1b655d`
@@ -49,18 +71,13 @@
 
 ### Добавлено
 - `layer-4-ui/src/lib/graphClient.ts` — HTTP-слой поверх WS:
-  - `initGraphClient()` — подписывается на `graph:refresh` (эмитится `wsClient` если `graph:full` не пришёл за 2 с) → `GET /graph` → `store.setGraph()` → `emit('graph:full')`
-  - `rebuildGraph()` — `POST /graph/rebuild` с индикатором загрузки и обработкой ошибок
-  - `fetchGraph()` — чистый `GET /graph` для ручного вызова (например при HMR)
-  - Все ошибки логируются с префиксом `[graphClient]`, не бросают наружу
-- `layer-4-ui/src/components/AppShell/index.ts` — при `mount()` вызывается `initGraphClient()` после `connectWs()`
-
-### Обновлено
-- `Header/index.ts` — `_doRefresh()` теперь вызывает `rebuildGraph()` из `graphClient` вместо прямого `fetch`; `_syncUpdatedAt()` форматирует `store.graph.updatedAt` в `ЧЧ:ММ:СС`
-- `store.ts` — `applyDiff()` обновляет `updatedAt: Date.now()` при каждом инкрементальном diff
+  - `initGraphClient()` — подписывается на `graph:refresh` → `GET /graph`
+  - `rebuildGraph()` — `POST /graph/rebuild`
+  - `fetchGraph()` — чистый `GET /graph`
+- `AppShell/index.ts` — `initGraphClient()` вызывается после `connectWs()`
 
 ### Зафиксировано в репо
-- Roadmap Issue #6 — чекбоксы 🛠 Интеграция layer-3-server частично отмечены ✅
+- Roadmap Issue #6 — чекбоксы 🛠 Интеграция layer-3-server частично ✅
 - Файл: `layer-4-ui/src/lib/graphClient.ts` (новый)
 
 ---
@@ -68,25 +85,9 @@
 ## [2026-07-26] — Layer 4: DataFlow режим — 3 пути + dash + dimmed (Issue #6)
 
 ### Добавлено
-- `Canvas/DataFlowMode.ts` — оркестратор режима:
-  - Три пути: `DATAFLOW_NODE_IDS[0..2]` — Login Flow / File Upload / Auth Check
-  - `applyHighlight(cy, idx)` — `.df-active` на узлах/рёбрах пути, `.dimmed` на остальных
-  - `_startDash()` / `_stopDash()` — setInterval ~25fps — `line-dash-offset` на `.df-active` рёбрах
-  - `PathSelector` — glassmorphism pill в низу канваса: 3 кнопки + badge `(N узлов)`
-  - `_activate()` / `_deactivate()`: fade-in / fade-out (`opacity 0.2s`), `store.setDataflowMode()`
-  - `on('dataflow:next')` — `store.nextDataflowPath()` → циклическая смена 0→1→2→0
-  - `on('cy:ready')` — сохраняет `Core` для применения стилей
-
-- `styles/dataflow.css`:
-  - `@keyframes df-dash` (`stroke-dashoffset: -24`)
-  - `@keyframes df-pulse` — анимированная зелёная точка в `.df-path-name`
-  - `.df-path-name` — pill-бейдж активного пути в StatsBar/Header
-  - `.df-mode-active .service-item` — `opacity: 0.35` для выключенных Sidebar-элементов
-
-- `Canvas/CanvasToolbar.ts` — обновлён:
-  - `emit('dataflow:next', undefined)` вместо прямого переключения индекса
-  - `on('dataflow:toggle')` — синхронизация UI активного пути в label
-  - Убран `store.dataflowPaths` (phantom field, не существовал)
+- `Canvas/DataFlowMode.ts` — оркестратор режима: 3 пути, `applyHighlight`, `_startDash`, `PathSelector`
+- `styles/dataflow.css` — `@keyframes df-dash`, `@keyframes df-pulse`, `.dimmed`, `.df-active`
+- `Canvas/CanvasToolbar.ts` — `emit('dataflow:next')`, `on('dataflow:toggle')`
 
 ### Зафиксировано в репо
 - Roadmap Issue #6 — чекбокс ⚡ DataFlow отмечен ✅
