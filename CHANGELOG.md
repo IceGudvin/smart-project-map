@@ -6,6 +6,47 @@
 
 ---
 
+## [2026-07-26] — Старт реализации: monorepo + shared/ + layer-1-parser скелет
+
+Ссылка на Roadmap: [Issue #1](https://github.com/IceGudvin/smart-project-map/issues/1)
+
+### Добавлено
+- `pnpm-workspace.yaml` — явный список 7 пакетов monorepo
+- `tsconfig.base.json` — strict TypeScript для всех слоёв (`exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, `noImplicitOverride`)
+- `.gitignore` — `node_modules`, `dist`, `.env`, IDE-файлы
+- **`shared/`** — полный набор TypeScript-типов:
+  - `graph.ts` — `ServiceNode`, `Edge`, `GraphModel`, `GraphDiff`, `Schema`, `Route`, `SchemaRef`
+  - `events.ts` — `WsEvent` (union: `graph:full`, `graph:update`, `graph:error`, `ping`)
+  - `parser.ts` — `RawParserOutput`, `RawRoute`, `RawHttpCall`, `RawSchema`, `EnvEntry`
+  - `index.ts` — реэкспорт всего публичного API
+- **`layer-1-parser/`** — скелет из 8 файлов-заглушек с правильными импортами из `@smart-map/shared`:
+  - `src/index.ts`, `languages/typescript.ts`, `languages/python.ts`
+  - `extractors/routes.ts`, `extractors/schemas.ts`, `extractors/http-calls.ts`, `extractors/env-config.ts`
+- `SPACE_INSTRUCTIONS.md` — добавлен раздел про Roadmap-issue: формат названия, шаблон, правила
+
+### Изменено
+- `package.json` (корень) — обновлён: добавлены скрипты `typecheck`, `clean`; порядок workspaces исправлен (`shared` первым)
+
+### Проблемы и фиксы в ходе сессии
+- `ast-grep-napi` → `@ast-grep/napi` — неверное имя пакета
+- `rootDir` ошибка в `layer-1-parser` — `paths` переключён с `shared/src/` на `shared/dist/index.d.ts`
+- `composite: true` поломал `tsup` — убран из `shared/tsconfig.json`
+- Порядок `exports` в `shared/package.json` — `"types"` перемещён первым
+- Отсутствие `"type": "module"` — добавлено в `shared/package.json` и `layer-1-parser/package.json`
+
+### Зафиксировано в репо
+- Основной коммит: [`cdd8053`](https://github.com/IceGudvin/smart-project-map/commit/cdd8053a7244b32e6db2b12c022c4e78adbe4e4e) — 19 файлов
+- Фиксы: [`9e1f23e`](https://github.com/IceGudvin/smart-project-map/commit/9e1f23e2be3f2a7c65495f82422ced82ca61965a), [`6192ba3`](https://github.com/IceGudvin/smart-project-map/commit/6192ba392c10075c43c753a07e0640f5db9d574c), [`a4d181d`](https://github.com/IceGudvin/smart-project-map/commit/a4d181df59f9743fbc7a72fb43eef991140f79dd)
+
+### Результаты проверки
+- `pnpm install` — ✅
+- `shared/` `pnpm typecheck` — ✅ 0 errors
+- `shared/` `pnpm build` — ✅ `dist/index.js`, `dist/index.cjs`, `dist/index.d.ts`
+- `layer-1-parser/` `pnpm typecheck` — ✅ 0 errors
+- `layer-1-parser/` `pnpm build` — ✅ `dist/index.js`, `dist/index.d.ts`
+
+---
+
 ## [2026-07-26] — Референсный проект Leadway, детализация Python/FastAPI слоя
 
 ### Добавлено
@@ -24,11 +65,8 @@
 - **Layer 1** — обновлён `RawParserOutput`: добавлены поля `language` и `framework`
 - **Layer 2 (Graph Builder)** — Resolver расширен: теперь распознаёт инфраструктурные узлы (PostgreSQL, Redis, MinIO) из `.env`, не только сервисы приложения
 - **Layer 4 (UI)** — добавлена логика визуального различия узлов по `nodeType`: service (прямоугольник), infrastructure (цилиндр/шестиугольник), external (пунктирная граница)
-- **shared/ — тип `ServiceNode`** — добавлены два новых поля:
-  - `framework: 'fastapi' | 'express' | 'fastify' | 'nestjs' | 'nextjs' | 'gin' | 'unknown'`
-  - `nodeType: 'service' | 'infrastructure' | 'external'`
+- **shared/ — тип `ServiceNode`** — добавлены поля `framework` и `nodeType`
 - **Roadmap** — MVP теперь явно включает Python/FastAPI парсер наравне с TypeScript парсером
-- **Layer 4, пример dagre-лейаута** — обновлён под Leadway: `frontend (Next.js) → FastAPI backend → PostgreSQL / Redis / MinIO`
 
 ### Зафиксировано в репо
 - `CONCEPT.md` — коммит `02b6992` (точечные правки, старые разделы не тронуты)
