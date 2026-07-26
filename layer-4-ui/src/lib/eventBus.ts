@@ -12,7 +12,7 @@
  * События:
  *   UI-действия:  node:select, node:deselect,
  *                     dataflow:toggle, dataflow:next, graph:refresh
- *   Cytoscape:        cy:ready
+ *   Cytoscape:        cy:ready, cy:fit
  *   WS-состояние:  ws:connected, ws:disconnected, ws:error
  *   Тема:             theme:changed
  */
@@ -22,19 +22,19 @@ import type { GraphModel, GraphDiff } from '../../../shared/src/graph.js'
 // ----------------------------------------------------------------- event map
 
 export interface EventMap {
-  // ---- Выбор узла —————————————————————————————
+  // ---- Выбор узла ————————————————————
   /** Клик на узел (сайдбар, cy tap) → все подписчики обновляют состояние */
   'node:select':         string
   /** Клик по фону / ESC / кнопка × в DetailPanel */
   'node:deselect':       undefined
 
-  // ---- DataFlow-режим ————————————————————————
+  // ---- DataFlow-режим ————————————————
   /** true = включить, false = выключить */
   'dataflow:toggle':     boolean
   /** Переключить на следующий предустановленный путь (0→1→2→0) */
   'dataflow:next':       undefined
 
-  // ---- Граф ————————————————————————————————
+  // ---- Граф ——————————————————————
   /** Полный снимок графа от layer-3 */
   'graph:full':          GraphModel
   /** Инкрементальное обновление */
@@ -44,16 +44,18 @@ export interface EventMap {
   /** Ошибка сервера */
   'graph:error':         string
 
-  // ---- Cytoscape —————————————————————————————
+  // ---- Cytoscape ———————————————————
   /** Canvas эмитит после инициализации cy */
   'cy:ready':            unknown  // cy instance (typed as unknown чтоб не тянуть cytoscape в bus)
+  /** Header эмитит при нажатии «⊡ Fit» → Canvas вызывает cy.fit(60) */
+  'cy:fit':              undefined
 
-  // ---- WS-состояние ————————————————————————
+  // ---- WS-состояние ————————————————
   'ws:connected':        undefined
   'ws:disconnected':     undefined
   'ws:error':            Event | unknown
 
-  // ---- Тема —————————————————————————————————
+  // ---- Тема ———————————————————————
   'theme:changed':       'dark' | 'light'
 }
 
