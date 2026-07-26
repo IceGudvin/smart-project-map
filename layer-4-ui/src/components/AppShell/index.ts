@@ -11,6 +11,10 @@
  *   - GET  /graph          — фоллбэк если WS не вернул graph:full за 2с
  *   - POST /graph/rebuild  — принудительный пересбор графа (в Header)
  *   - X-Updated-At         — заголовок в обоих ответах, мс-таймштамп
+ *
+ * Интеграция с ProjectPicker:
+ *   - При project:changed — переподключается WS через 1с
+ *     (даём серверу время запустить сканирование)
  */
 
 import type { Core } from 'cytoscape'
@@ -28,19 +32,18 @@ import {
   stopDashAnimation,
 } from '../../graph/cytoscapeInit.js'
 
-import { Header }      from '../Header/index.js'
-import { Sidebar }     from '../Sidebar/index.js'
-// Canvas, DetailPanel, EdgeTooltip — singleton-объекты, не классы
-import { Canvas }      from '../Canvas/index.js'
-import { DetailPanel } from '../DetailPanel/index.js'
-import { EdgeTooltip } from '../EdgeTooltip/index.js'
+import { Header }         from '../Header/index.js'
+import { Sidebar }        from '../Sidebar/index.js'
+import { Canvas }         from '../Canvas/index.js'
+import { DetailPanel }    from '../DetailPanel/index.js'
+import { EdgeTooltip }    from '../EdgeTooltip/index.js'
+import { ProjectPicker }  from '../ProjectPicker/index.js'
 
 // ================================================================ helpers
 
 /**
  * Парсит миллисекундный таймштамп из заголовка X-Updated-At.
- * Сервер шлёт строку вида "1753542345678" (Unix ms).
- * Если заголовка нет или он невалиден — возвращает Date.now().
+ * Если заголовка нет или невалиден — возвращает Date.now().
  */
 function parseUpdatedAt(res: Response): number {
   const raw = res.headers.get('x-updated-at')
@@ -101,7 +104,7 @@ function injectLayoutStyles(): void {
       display: flex;
       flex-direction: row;
       overflow: hidden;
-      height: 0; /* важно: заставляет flex-child считать высоту от flex-parent */
+      height: 0;
     }
 
     /* ---- Sidebar: фиксированная ширина ---- */
@@ -158,7 +161,6 @@ export class AppShell {
   private root: HTMLElement
   private cy:   Core | null = null
 
-  // Header и Sidebar — классы; Canvas/DetailPanel/EdgeTooltip — объекты-синглтоны
   private header!:  Header
   private sidebar!: Sidebar
 
@@ -195,25 +197,28 @@ export class AppShell {
     this.root.appendChild(headerEl)
     this.root.appendChild(mainEl)
 
-    // ---- Header: класс — new + mount(уже не нужен el в конструкторе — передаётся в new)
+    // ---- Header
     this.header = new Header(headerEl)
     this.header.mount()
 
-    // ---- Sidebar: класс без аргумента в конструкторе — el передаётся в mount(el)
+    // ---- Sidebar
     this.sidebar = new Sidebar()
     this.sidebar.mount(sidebarEl)
 
-    // ---- Canvas: singleton-объект — mount(el)
+    // ---- Canvas
     Canvas.mount(canvasWrapEl)
 
-    // ---- DetailPanel: singleton-объект — создаёт свой el и вставляет в canvasWrapEl
+    // ---- DetailPanel
     const dpEl = document.createElement('div')
     dpEl.className = 'app-detail-panel'
     canvasWrapEl.appendChild(dpEl)
     DetailPanel.mount(dpEl)
 
-    // ---- EdgeTooltip: singleton-объект — монтирует себя в body самостоятельно
+    // ---- EdgeTooltip
     EdgeTooltip.mount()
+
+    // ---- ProjectPicker: монтируем один раз — он сам подписывается на project:pick:show
+    ProjectPicker.mount()
 
     this._bindEvents()
 
@@ -267,13 +272,7 @@ export class AppShell {
       })
     )
 
-    // ---- graph:refresh — HTTP-фоллбэк (WS не вернул graph:full за 2с)
-    //
-    // Протокол:
-    //   GET /graph
-    //   Ответ: { nodes, edges, updatedAt } + заголовок X-Updated-At: <ms>
-    //   updatedAt берём из тела (data.updatedAt) если есть,
-    //   иначе из заголовка X-Updated-At, иначе Date.now().
+    // ---- graph:refresh — HTTP-фоллбэк
     this.unsubs.push(
       on('graph:refresh', async () => {
         try {
@@ -282,7 +281,6 @@ export class AppShell {
 
           const data = await res.json() as import('../../../../shared/src/graph.js').GraphModel
 
-          // Если сервер не заполнил updatedAt в теле — берём из заголовка
           if (!data.updatedAt || data.updatedAt === 0) {
             data.updatedAt = parseUpdatedAt(res)
           }
@@ -297,13 +295,22 @@ export class AppShell {
       })
     )
 
-    // ---- graph:rebuild:done — POST /graph/rebuild завершился (эмитит Header)
-    //
-    // Реальное обновление данных идёт через graph:full по WS после rebuild.
-    // AppShell просто синхронизирует header-метку времени.
+    // ---- graph:rebuild:done
     this.unsubs.push(
       on('graph:rebuild:done', (_updatedAt) => {
         this.header.update()
+      })
+    )
+
+    // ---- project:changed — пользователь выбрал новый проект через UI
+    //
+    // Даём серверу 1с на переключение watcherа, затем переподключаем WS.
+    this.unsubs.push(
+      on('project:changed', (_dir) => {
+        disconnectWs()
+        setTimeout(() => {
+          connectWs()
+        }, 1000)
       })
     )
 
@@ -368,7 +375,7 @@ export class AppShell {
       })
     )
 
-    // ---- sidebar:collapsed — адаптируем .app-sidebar под collapsed-класс
+    // ---- sidebar:collapsed
     this.unsubs.push(
       on('sidebar:collapsed', (collapsed) => {
         const sidebarEl = this.root.querySelector<HTMLElement>('.app-sidebar')
