@@ -256,31 +256,42 @@ export function highlightSelected(cy: Core, nodeId: string): void {
 
 /**
  * Полная синхронизация cy с GraphModel.
- * Перед добавлением рёбер — дедупликация по edgeKey.
+ *
+ * Стратегия «полная замена»:
+ *   1. Собрать уникальные элементы из graph (дедупликация рёбер по edgeKey)
+ *   2. Удалить ВСЕ элементы cy одним вызовом
+ *   3. Добавить свежий набор
+ *   4. Перезапустить layout
+ *
+ * Это надёжнее инкрементального подхода: инкремент ломается когда
+ * удаление узла каскадно удаляет рёбра, уже записанные в existingEdgeIds,
+ * и следующее cy.add() падает с «Can not create second element with ID».
  */
 export function syncGraph(cy: Core, graph: GraphModel, isDark: boolean): void {
-  cy.batch(() => {
-    const existingNodeIds = new Set(cy.nodes().map((n: NodeSingular) => n.id()))
-    const existingEdgeIds = new Set(cy.edges().map((e: EdgeSingular) => e.id()))
-
-    // Добавить новые узлы
-    for (const node of graph.nodes) {
-      if (!existingNodeIds.has(node.id)) cy.add(buildNodeElement(node, isDark))
-    }
-    // Удалить пропавшие узлы
-    const newNodeIds = new Set(graph.nodes.map((n: ServiceNode) => n.id))
-    cy.nodes().forEach((n: NodeSingular) => { if (!newNodeIds.has(n.id())) n.remove() })
-
-    // Дедуплицировать рёбра перед добавлением
-    const seen = new Set<string>(existingEdgeIds)
-    for (const edge of graph.edges) {
-      const eid = edgeKey(edge)
-      if (!seen.has(eid)) { seen.add(eid); cy.add(buildEdgeElement(edge)) }
-    }
-    // Удалить пропавшие рёбра
-    const newEdgeIds = new Set(graph.edges.map((e: Edge) => edgeKey(e)))
-    cy.edges().forEach((e: EdgeSingular) => { if (!newEdgeIds.has(e.id())) e.remove() })
+  // 1. Дедупликация рёбер
+  const seenEdges = new Set<string>()
+  const uniqueEdges = graph.edges.filter((e: Edge) => {
+    const k = edgeKey(e)
+    if (seenEdges.has(k)) return false
+    seenEdges.add(k)
+    return true
   })
+
+  const nodeEls: ElementDefinition[] = graph.nodes.map(
+    (n: ServiceNode) => buildNodeElement(n, isDark)
+  )
+  const edgeEls: ElementDefinition[] = uniqueEdges.map(
+    (e: Edge) => buildEdgeElement(e)
+  )
+
+  // 2. Атомарная замена: убрать всё → добавить новое
+  cy.batch(() => {
+    cy.elements().remove()
+    cy.add([...nodeEls, ...edgeEls])
+  })
+
+  // 3. Layout после замены
+  runLayout(cy)
 }
 
 // ── event handlers ────────────────────────────────────────────────────────

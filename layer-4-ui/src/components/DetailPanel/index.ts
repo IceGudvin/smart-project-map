@@ -270,10 +270,22 @@ export const DetailPanel = {
     const el = this._el;
     if (!el) return;
     const refs = (el as any)._dpRefs as { backdrop: HTMLElement };
+
+    // Сначала убираем aria-hidden — ДО любого фокуса.
+    // Иначе браузер блокирует фокус на потомке скрытого региона
+    // и выбрасывает предупреждение «Blocked aria-hidden on a focused element».
     el.setAttribute('aria-hidden', 'false');
     el.classList.add('detail-panel--open');
     refs?.backdrop.classList.add('dp-backdrop--visible');
-    requestAnimationFrame(() => (el.querySelector('.dp-close') as HTMLElement)?.focus());
+
+    // Фокус после того как aria-hidden снят и layout обновлён.
+    // Используем двойной rAF: первый кадр — применение стилей,
+    // второй — гарантированно после paint, когда кнопка доступна.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        (el.querySelector('.dp-close') as HTMLElement | null)?.focus();
+      });
+    });
   },
 
   destroy(): void {
