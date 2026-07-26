@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import type { WebSocket, RawData } from '@fastify/websocket'
+import type { WebSocket } from '@fastify/websocket'
+import type { RawData } from 'ws'
 import type { WsEvent } from '@smart-map/shared'
 import { store } from '../store.js'
 
@@ -41,7 +42,7 @@ export function registerWsHandler(app: FastifyInstance): void {
     socket.on('message', (raw: RawData) => {
       try {
         const msg = JSON.parse(raw.toString()) as { type?: string }
-        if (msg.type === 'pong') return // keepalive response
+        if (msg.type === 'pong') return
       } catch {
         // ignore malformed
       }
