@@ -17,8 +17,10 @@ export function registerProjectRoutes(app: FastifyInstance): void {
    * Переключает projectDir, отвечает 200 сразу,
    * затем запускает скан + watcher в фоне.
    *
-   * FIX: используем reply.hijack() чтобы Fastify не пытался отправить
-   * ответ ещё раз после async-хэндлера (исправляет 500 “Reply already sent”).
+   * ВАЖНО: reply.hijack() + async handler = setImmediate никогда не выполняется
+   * (Fastify бросает исключение внутри async-хэндлера после hijack, оно глотается).
+   * Решение: планируем setImmediate ДО return reply.send() — тогда callback
+   * уже зарегистрирован в event loop и выполнится после ответа.
    */
   app.post<{ Body: StartBody }>('/server/start', {
     schema: {
@@ -45,18 +47,12 @@ export function registerProjectRoutes(app: FastifyInstance): void {
     setProjectDir(dir)
     console.log(`[project] switched to: ${dir}`)
 
-    // Отвечаем немедленно — просим Fastify не добавлять ничего после
-    reply.hijack()
-    reply.raw.writeHead(200, {
-      'Content-Type': 'application/json',
-      'X-Project-Dir': dir,
-    })
-    reply.raw.end(JSON.stringify({ ok: true, projectDir: dir }))
-
-    // Скан + watcher полностью асинхронно, после ответа
+    // Регистрируем скан в event loop ДО того как Fastify отправит ответ.
+    // Это гарантирует что setImmediate callback выполнится после I/O ответа.
     setImmediate(() => {
       void (async () => {
         try {
+          console.log('[project] setImmediate fired — starting scan...')
           stopWatcher()
           const { graph, diff } = await runScan()
           if (diff) {
@@ -71,6 +67,12 @@ export function registerProjectRoutes(app: FastifyInstance): void {
         }
       })()
     })
+
+    // Отвечаем после регистрации setImmediate — Fastify сам управляет ответом
+    return reply
+      .header('Content-Type', 'application/json')
+      .header('X-Project-Dir', dir)
+      .send({ ok: true, projectDir: dir })
   })
 
   /**
