@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Shared TypeScript types and contracts for all Smart Project Map layers",
   "private": true,
+  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
