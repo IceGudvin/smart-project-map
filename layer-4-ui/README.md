@@ -1,32 +1,32 @@
-# Layer 4 — UI
+# layer-4-ui
 
-Фронтенд: интерактивный граф сервисов с предпросмотром деталей.
+Браузерный интерфейс Smart Project Map.
 
-## Ответственность
-- Рендер графа с узлами (сервисами) и рёбрами (вызовами)
-- Интерактивность: zoom, pan, click по узлу/ребру
-- Панель деталей: роуты, схемы, входящие/исходящие вызовы
-- Tooltip на стрелке: что передаётся (payload preview)
-- Live-обновление через WebSocket
+## Стек
 
-## Планируемые файлы
-```
-layer-4-ui/
-├── index.html
-├── app.ts
-├── components/
-│   ├── Graph.tsx         ← основной канвас
-│   ├── NodeCard.tsx      ← popup: роуты, схемы, связи
-│   ├── EdgeTooltip.tsx   ← payload на стрелке
-│   └── Sidebar.tsx       ← список сервисов + поиск
-├── graph/
-│   ├── renderer.ts       ← D3 / Cytoscape.js
-│   ├── layout.ts         ← dagre (иерархический layout)
-│   └── interactions.ts   ← zoom, pan, select
-└── store.ts              ← Zustand / Jotai
+- **Vite** — сборка и dev-сервер (порт `4000`)
+- **TypeScript** — строгая типизация
+- **Cytoscape.js + dagre** — рендер графа зависимостей
+- `@smart-project-map/shared` — общие типы (ServiceNode, Edge, GraphModel)
+
+## Запуск
+
+```bash
+pnpm install
+pnpm dev
 ```
 
-## Варианты рендера
-- **D3.js** — максимум контроля, SVG, кастомные анимации стрелок
-- **Cytoscape.js** — граф из коробки, встроенные layout'ы
-- **React Flow** — React-нативный, красивый UI, тяжелее
+UI ожидает, что `layer-3-server` запущен на порту `3000`.
+WebSocket проксируется через Vite: `/ws` → `ws://localhost:3000`.
+
+## Структура
+
+```
+src/
+  main.ts          — точка входа
+  store.ts         — реактивное состояние приложения
+  styles/          — дизайн-система (токены, reset, компоненты)
+  components/      — UI-компоненты
+  graph/           — инициализация и конфигурация Cytoscape
+  lib/             — вспомогательные модули (WS, EventBus)
+```
