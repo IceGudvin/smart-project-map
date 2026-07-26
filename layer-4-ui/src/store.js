@@ -7,6 +7,7 @@
  *   dataflowMode   — включён ли DataFlow-режим
  *   activeDataflowPath — 0=LoginFlow / 1=FileUpload / 2=AuthCheck
  *   wsStatus       — состояние WebSocket-соединения
+ *   projectDir     — путь к текущему репозиторию (из server:status)
  *   filter         — строка поиска/фильтрации
  *   theme          — 'dark' | 'light'
  *
@@ -26,6 +27,7 @@ export function initStore() {
         dataflowMode: false,
         activeDataflowPath: 0,
         wsStatus: 'disconnected',
+        projectDir: null,
         filter: '',
         theme: window.matchMedia('(prefers-color-scheme: dark)').matches
             ? 'dark'
@@ -42,33 +44,31 @@ export function initStore() {
     }
     return {
         // ---------------------------------------------------------------- getters
-        get graph() { return state.graph; },
-        get selectedNodeId() { return state.selectedNodeId; },
-        get dataflowMode() { return state.dataflowMode; },
-        get activeDataflowPath() { return state.activeDataflowPath; },
-        get wsStatus() { return state.wsStatus; },
-        get filter() { return state.filter; },
-        get theme() { return state.theme; },
+        get graph()             { return state.graph; },
+        get selectedNodeId()    { return state.selectedNodeId; },
+        get dataflowMode()      { return state.dataflowMode; },
+        get activeDataflowPath(){ return state.activeDataflowPath; },
+        get wsStatus()          { return state.wsStatus; },
+        get projectDir()        { return state.projectDir; },
+        get filter()            { return state.filter; },
+        get theme()             { return state.theme; },
         // --------------------------------------------------------------- mutations
         setGraph(data) {
             patch({ graph: data });
         },
         /**
-         * Применяет инкрементальный diff от graph:update.
-         * addedNodes   — добавляются в конец массива
-         * removedNodeIds — удаляются по id
-         * updatedNodes — заменяют существующие узлы с тем же id
-         * addedEdges   — добавляются
-         * removedEdgeIds — удаляются (формат id = `${from}->${to}->${method}-${path}`)
+         * Применяет инкрементальный diff от graph:patch.
          */
         applyDiff(diff) {
-            const { addedNodes, removedNodeIds, updatedNodes, addedEdges, removedEdgeIds } = diff;
+            const { addedNodes = [], removedNodeIds = [], updatedNodes = [], addedEdges = [], removedEdgeIds = [] } = diff ?? {};
+            // guard: если граф ещё пустой и diff пустой — не трогаем
+            if (!state.graph?.nodes) return;
             let nodes = state.graph.nodes
                 .filter(n => !removedNodeIds.includes(n.id))
                 .map(n => {
-                const upd = updatedNodes.find(u => u.id === n.id);
-                return upd ?? n;
-            });
+                    const upd = updatedNodes.find(u => u.id === n.id);
+                    return upd ?? n;
+                });
             nodes = nodes.concat(addedNodes);
             const edgeId = (e) => `${e.from}->${e.to}->${e.method}-${e.path}`;
             let edges = state.graph.edges.filter(e => !removedEdgeIds.includes(edgeId(e)));
@@ -79,7 +79,6 @@ export function initStore() {
                     edges,
                     updatedAt: Date.now(),
                 },
-                // Если выбранный узел удалён — сбрасываем выбор
                 selectedNodeId: state.selectedNodeId && removedNodeIds.includes(state.selectedNodeId)
                     ? null
                     : state.selectedNodeId,
@@ -94,13 +93,15 @@ export function initStore() {
         setActiveDataflowPath(index) {
             patch({ activeDataflowPath: index });
         },
-        /** Циклически переключает путь: 0 → 1 → 2 → 0 */
         nextDataflowPath() {
             const next = ((state.activeDataflowPath + 1) % 3);
             patch({ activeDataflowPath: next });
         },
         setWsStatus(status) {
             patch({ wsStatus: status });
+        },
+        setProjectDir(dir) {
+            patch({ projectDir: dir ?? null });
         },
         setFilter(q) {
             patch({ filter: q });
@@ -126,8 +127,4 @@ export function initStore() {
         },
     };
 }
-/**
- * Глобальный singleton стора.
- * Импортируется всеми компонентами напрямую.
- */
 export const store = initStore();

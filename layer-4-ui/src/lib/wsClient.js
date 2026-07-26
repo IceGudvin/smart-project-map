@@ -1,5 +1,5 @@
 /**
- * wsClient.ts — WebSocket-клиент для layer-3-server.
+ * wsClient.js — WebSocket-клиент для layer-3-server.
  *
  * Протокол сообщений (входящие):
  *   { type: 'graph:full',     payload: GraphModel }   — полный снимок
@@ -11,10 +11,6 @@
  *
  * Фоллбэк:
  *   - Если graph:full не пришёл за 2с после open — emit('graph:refresh')
- *
- * ProjectPicker:
- *   - НЕ показывается автоматически ни при каких условиях.
- *   - Открывается ТОЛЬКО через кнопку «Подключить репозиторий» в Header.
  */
 import { emit } from './eventBus.js';
 import { store } from '../store.js';
@@ -38,20 +34,21 @@ export function disconnectWs() {
         _ws.close();
         _ws = null;
     }
+    store.setWsStatus('disconnected');
     emit('ws:status', 'disconnected');
 }
 function _connect() {
-    if (_stopped)
-        return;
+    if (_stopped) return;
     console.log(`[wsClient] _connect() attempt=${_reconnectAttempt}`);
+    store.setWsStatus('connecting');
     emit('ws:status', 'connecting');
     _ws = new WebSocket(WS_URL);
     _ws.onopen = () => {
         console.log('[wsClient] onopen — connection established');
         _reconnectAttempt = 0;
+        store.setWsStatus('connected');
         emit('ws:status', 'connected');
         _graphReceived = false;
-        // Фоллбэк: если graph:full не пришёл за 2с — HTTP GET /graph
         _fallbackTimer = setTimeout(() => {
             if (!_graphReceived) {
                 console.warn('[wsClient] graph:full NOT received in 2s — falling back to GET /graph');
@@ -63,8 +60,7 @@ function _connect() {
         let msg;
         try {
             msg = JSON.parse(event.data);
-        }
-        catch {
+        } catch {
             console.warn('[wsClient] invalid JSON:', event.data);
             return;
         }
@@ -72,25 +68,29 @@ function _connect() {
         if (msg.type === 'graph:full') {
             _clearFallback();
             _graphReceived = true;
-            console.log('[wsClient] graph:full received → calling store.setGraph + emit graph:full');
             store.setGraph(msg.payload);
             emit('graph:full', store.graph);
             return;
         }
         if (msg.type === 'graph:patch') {
+            // guard: применяем diff только если базовый граф уже загружен
+            if (!store.graph?.nodes?.length) {
+                console.warn('[wsClient] graph:patch received before graph:full — ignoring');
+                return;
+            }
             store.applyDiff(msg.payload);
             emit('graph:update', store.graph);
             return;
         }
-        // server:status — не показываем пикер автоматически,
-        // просто отменяем фоллбэк если проект не задан
         if (msg.type === 'server:status') {
             const status = msg.payload;
             console.log(`[wsClient] server:status → ready=${status.ready}, projectDir=${status.projectDir ?? 'null'}`);
+            // Сохраняем путь к проекту в store — Header покажет его
+            store.setProjectDir(status.projectDir ?? null);
+            emit('project:status', status);
             if (!status.ready) {
-                console.log('[wsClient] server not ready — cancelling fallback timer, waiting for graph:full after scan');
                 _clearFallback();
-                _graphReceived = true; // предотвращаем фоллбэк GET /graph пока нет проекта
+                _graphReceived = true;
             }
             return;
         }
@@ -98,10 +98,10 @@ function _connect() {
     };
     _ws.onclose = (ev) => {
         _clearFallback();
-        console.log(`[wsClient] onclose — code=${ev.code}, reason=${ev.reason || '(none)'}`, `_stopped=${_stopped}`);
+        console.log(`[wsClient] onclose — code=${ev.code} _stopped=${_stopped}`);
+        store.setWsStatus('disconnected');
         emit('ws:status', 'disconnected');
-        if (_stopped)
-            return;
+        if (_stopped) return;
         const delay = RECONNECT_DELAYS[Math.min(_reconnectAttempt, RECONNECT_DELAYS.length - 1)];
         _reconnectAttempt++;
         console.log(`[wsClient] reconnecting in ${delay}ms (attempt ${_reconnectAttempt})...`);
@@ -109,7 +109,6 @@ function _connect() {
     };
     _ws.onerror = (ev) => {
         console.warn('[wsClient] onerror:', ev);
-        // onclose вызовется следом
     };
 }
 function _clearFallback() {

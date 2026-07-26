@@ -49,7 +49,9 @@ function buildNodeElement(node, isDark) {
         ? NODE_COLOR[node.nodeType]?.dark   ?? NODE_COLOR.service.dark
         : NODE_COLOR[node.nodeType]?.light  ?? NODE_COLOR.service.light;
     const slug    = getIconSlug(node);
-    const iconUrl = slug ? `${SIMPLE_ICONS_CDN}/${slug}/ffffff` : '';
+    // Цвет иконки подбираем под тему: в тёмной — белый, в светлой — цвет узла
+    const iconColor = isDark ? 'ffffff' : color.replace('#', '');
+    const iconUrl = slug ? `${SIMPLE_ICONS_CDN}/${slug}/${iconColor}` : '';
     return {
         data: {
             id:        node.id,
@@ -89,18 +91,15 @@ function groupEdges(edges) {
         const count = group.length;
         result.push({
             data: {
-                // id группы — без метода/пути, уникален для пары
                 id:           edgeGroupKey(first),
                 source:       first.from ?? first.source,
                 target:       first.to   ?? first.target,
-                // при count=1 показываем метод+путь, иначе только счётчик
                 method:       count === 1 ? (first.method ?? '') : '',
                 path:         count === 1 ? (first.path   ?? '') : '',
                 count,
                 label:        count > 1 ? `×${count}` : '',
                 inputSchema:  first.inputPayload?.schemaName  ?? '',
                 outputSchema: first.outputPayload?.schemaName ?? '',
-                // сохраняем все маршруты для тултипа
                 routes: group.map(e => ({
                     method: e.method ?? '',
                     path:   e.path   ?? '',
@@ -114,10 +113,10 @@ function groupEdges(edges) {
 }
 
 function buildStylesheet(isDark) {
-    const primary   = isDark ? '#4f98a3' : '#01696f';
-    const textColor = isDark ? '#d1d0ce' : '#1e1d19';
-    const dimText   = isDark ? '#4e4d4b' : '#b0afa9';
-    const dimBorder = isDark ? 0.12 : 0.10;
+    const primary        = isDark ? '#4f98a3' : '#01696f';
+    const textColor      = isDark ? '#d1d0ce' : '#1e1d19';
+    const dimText        = isDark ? '#4e4d4b' : '#b0afa9';
+    const dimBorder      = isDark ? 0.12 : 0.10;
     const edgeLabelColor = isDark ? '#9a9896' : '#7a7974';
     return [
         // ---- base node
@@ -140,28 +139,33 @@ function buildStylesheet(isDark) {
                 'width':              120,
                 'height':             44,
                 'padding':            '10px',
-                // базово без иконки
-                'background-image':   'none',
-                'background-width':   '0%',
-                'background-height':  '0%',
-                'text-margin-y':      0,
-                'transition-property':  'background-opacity border-width border-opacity color',
-                'transition-duration':  '200ms',
-                'transition-timing-function': 'ease-out',
+                // без иконки по умолчанию
+                'background-image':            'none',
+                'background-width':            0,
+                'background-height':           0,
+                'background-position-x':       '100%',
+                'background-position-y':       '0%',
+                'background-image-opacity':    0,
+                'transition-property':         'background-opacity border-width border-opacity color',
+                'transition-duration':         '200ms',
+                'transition-timing-function':  'ease-out',
             },
         },
-        // ---- узлы с иконкой
+        // ---- узлы с иконкой: маленький бейдж в правом верхнем углу
         {
             selector: 'node[iconUrl != ""]',
             style: {
-                'background-image':      'data(iconUrl)',
-                'background-fit':        'contain',
-                'background-clip':       'none',
-                'background-width':      '36%',
-                'background-height':     '36%',
-                'background-position-x': '50%',
-                'background-position-y': '28%',
-                'text-margin-y':         8,
+                'background-image':         'data(iconUrl)',
+                // НЕ contain/cover — фиксированный размер 18×18px
+                'background-fit':           'none',
+                'background-clip':          'none',
+                'background-repeat':        'no-repeat',
+                'background-width':         18,
+                'background-height':        18,
+                // правый верхний угол, с отступом 5px
+                'background-position-x':    'calc(100% - 5px)',
+                'background-position-y':    '5px',
+                'background-image-opacity': 0.75,
             },
         },
         { selector: 'node.hover',       style: { 'background-opacity': 0.30, 'border-width': 3 } },
@@ -170,12 +174,13 @@ function buildStylesheet(isDark) {
         {
             selector: 'node.dimmed',
             style: {
-                'background-opacity': 0.05,
-                'border-opacity':     dimBorder,
-                'color':              dimText,
-                'background-image':   'none',
-                'background-width':   '0%',
-                'background-height':  '0%',
+                'background-opacity':       0.05,
+                'border-opacity':           dimBorder,
+                'color':                    dimText,
+                'background-image':         'none',
+                'background-width':         0,
+                'background-height':        0,
+                'background-image-opacity': 0,
             },
         },
         // ---- base edge
@@ -196,7 +201,6 @@ function buildStylesheet(isDark) {
                 'text-background-color':   isDark ? '#1c1b19' : '#f9f8f5',
                 'text-background-opacity': 0.85,
                 'text-background-padding': '2px',
-                'text-border-radius':      2,
                 'transition-property': 'line-opacity width',
                 'transition-duration': '200ms',
             },
@@ -279,6 +283,8 @@ export function highlightSelected(cy, nodeId) {
 
 // ================================================================ syncGraph
 export function syncGraph(cy, graph, isDark) {
+    if (!graph?.nodes) return; // guard: граф ещё не загружен
+
     const seenEdges = new Set();
     const uniqueEdges = graph.edges.filter(e => {
         const k = edgeKey(e);
@@ -359,10 +365,38 @@ export function runLayout(cy, direction = 'TB') {
 
 export function updateTheme(cy, isDark) {
     cy.style(buildStylesheet(isDark));
+    // Перестраиваем узлы чтобы обновить iconUrl с правильным цветом
+    if (cy.nodes().length > 0) {
+        cy.nodes().forEach(n => {
+            const slug = ICON_SLUG[n.id()] ?? ICON_SLUG[n.data('framework')] ?? null;
+            if (slug) {
+                const color = n.data('color').replace('#', '');
+                const iconColor = isDark ? 'ffffff' : color;
+                n.data('iconUrl', `${SIMPLE_ICONS_CDN}/${slug}/${iconColor}`);
+            }
+        });
+    }
 }
 
 // ================================================================ init
 export function initCytoscape({ container, graph, isDark = true }) {
+    if (!graph?.nodes) {
+        // Пустой граф — просто создаём инстанс без элементов
+        const cy = cytoscape({
+            container,
+            elements:        [],
+            style:           buildStylesheet(isDark),
+            layout:          { name: 'preset' },
+            minZoom:         0.25,
+            maxZoom:         3,
+            autoungrabify:   false,
+            autounselectify: false,
+        });
+        attachEventHandlers(cy);
+        emit('cy:ready', cy);
+        return cy;
+    }
+
     const seenEdges = new Set();
     const uniqueEdges = graph.edges.filter(e => {
         const k = edgeKey(e);
