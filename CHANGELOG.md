@@ -1,3 +1,31 @@
+## [2026-07-26] — Layer 4: Интеграция layer-3-server — финализация (Issue #6)
+
+### Добавлено
+- `eventBus.ts` — два новых события:
+  - `graph:rebuild:start` — эмитится Header при нажатии Refresh (блокирует кнопку)
+  - `graph:rebuild:done(updatedAt: number)` — эмитится после завершения `POST /graph/rebuild`;
+    payload — миллисекундный timestamp из заголовка `X-Updated-At` сервера
+- `AppShell/index.ts` — хелпер `parseUpdatedAt(res)`: читает `X-Updated-At` из HTTP-ответа;
+  использует его если `data.updatedAt === 0`; обработчик `graph:rebuild:done` обновляет Header
+- `Header/index.ts`:
+  - `_doRebuild()`: читает `X-Updated-At` из response headers + `body.updatedAt` (приоритет);
+    fallback → `Date.now()`; эмитит `graph:rebuild:start` / `graph:rebuild:done`
+  - `_setUpdatedAt(ts, flash)`: flash=true → анимирует `.hdr-updated` зелёным на 1.5 с после rebuild
+  - CSS `.hdr-updated.flash-ok` — `transition: color 300ms`
+  - `destroy()` — очищает `_flashTimer`
+
+### Исправлено
+- `vite.config.ts` — proxy исправлен:
+  - `/ws` → `ws://localhost:3001` (порт сервера, было 3000)
+  - `/graph` → `http://localhost:3001` (новый маршрут; было `/api`)
+- Все три подзадачи 🛠 Интеграция layer-3-server отмечены ✅ в Issue #6
+
+### Зафиксировано в репо
+- Коммит: `e1b655d`
+- Roadmap Issue #6 — чекбоксы 🛠 Интеграция layer-3-server закрыты ✅
+
+---
+
 ## [2026-07-26] — Layer 4: Интеграция layer-3-server — graphClient + updatedAt (Issue #6)
 
 ### Добавлено
