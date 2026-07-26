@@ -16,7 +16,9 @@
     "build": "pnpm -r run build",
     "dev": "pnpm -r run dev",
     "typecheck": "pnpm -r run typecheck",
-    "clean": "pnpm -r run clean"
+    "clean": "pnpm -r run clean",
+    "ui": "pnpm --filter @smart-map/layer-4-ui dev --open",
+    "server": "pnpm --filter @smart-map/layer-3-server dev"
   },
   "engines": {
     "node": ">=18.0.0",
