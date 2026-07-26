@@ -1,0 +1,26 @@
+{
+  "name": "@smart-map/layer-1-parser",
+  "version": "0.1.0",
+  "description": "Static code analysis layer — extracts routes, schemas, HTTP calls and env config",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@smart-map/shared": "workspace:*",
+    "ts-morph": "^23.0.0",
+    "ast-grep-napi": "^0.23.0",
+    "tree-sitter": "^0.21.0",
+    "tree-sitter-typescript": "^0.21.0",
+    "tree-sitter-python": "^0.21.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  }
+}

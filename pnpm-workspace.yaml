@@ -1,0 +1,8 @@
+packages:
+  - 'shared'
+  - 'layer-0-cli'
+  - 'layer-1-parser'
+  - 'layer-2-graph'
+  - 'layer-3-server'
+  - 'layer-4-ui'
+  - 'layer-5-dataflow'
