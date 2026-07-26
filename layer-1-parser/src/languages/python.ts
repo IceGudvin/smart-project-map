@@ -31,32 +31,9 @@ function extractRoutes(filePath: string, src: string): RawRoute[] {
 
 // ─── HTTP Calls ───────────────────────────────────────────────────────────────
 
-/**
- * Matches ALL of the following patterns:
- *
- * Pattern 1 — module-level direct call:
- *   httpx.post("https://...")  /  requests.get(url_var)
- *
- * Pattern 2 — AsyncClient instance (single-line):
- *   await client.post(f"{settings.backend_url}/api/messages/send", ...)
- *
- * Pattern 3 — AsyncClient instance (multi-line / context manager):
- *   async with httpx.AsyncClient() as client:
- *       resp = await client.post(
- *           f"{settings.backend_url}/api/events/",
- *
- * For P2+P3 the URL token (possibly an f-string) is resolved via VariableMap.
- */
-
-// P1: httpx.METHOD(token) / requests.METHOD(token)
 const HTTP_DIRECT_RE =
   /(?:httpx|requests)\.(get|post|put|patch|delete)\s*\(\s*(f?["'][^"'\n]{3,}["']|[A-Za-z_][\w.]*)/gi;
 
-// P2+P3: await [anything.]client.METHOD( <token> [, ...]
-// The URL token may be:
-//   f"{settings.backend_url}/api/path"   — f-string
-//   "https://hard-coded/path"            — plain string
-//   url_variable                         — identifier
 const HTTP_CLIENT_RE =
   /await\s+(?:[\w.]+\.)?client\.(get|post|put|patch|delete)\s*\(\s*\n?\s*(f?["'][^"'\n]{3,}["']|[A-Za-z_][\w.]*)/gi;
 
@@ -69,7 +46,6 @@ function extractHttpCalls(
   const varMap = buildVariableMap(src, envConfig);
   let match: RegExpExecArray | null;
 
-  // P1
   HTTP_DIRECT_RE.lastIndex = 0;
   while ((match = HTTP_DIRECT_RE.exec(src)) !== null) {
     const method = match[1]!.toUpperCase() as RawHttpCall['method'];
@@ -79,7 +55,6 @@ function extractHttpCalls(
     calls.push({ method, url, file: filePath, line });
   }
 
-  // P2+P3
   HTTP_CLIENT_RE.lastIndex = 0;
   while ((match = HTTP_CLIENT_RE.exec(src)) !== null) {
     const method = match[1]!.toUpperCase() as RawHttpCall['method'];
@@ -100,29 +75,41 @@ function extractHttpCalls(
  * PUBLISH commands: rpush | lpush | xadd | publish
  * CONSUME commands: blpop | brpop | subscribe | xread
  *
- * The queue name argument may be:
- *   "intake_queue"       — string literal        → taken as-is
- *   queue_name           — variable              → resolved via VariableMap
- *   INTAKE_QUEUE         — UPPER_CASE constant   → resolved via VariableMap
- *   settings.queue_name  — settings attribute    → resolved via EnvEntry
- *
- * Variable resolution is done per-file via buildVariableMap():
- *   - direct assignments: queue = "intake_queue"
- *   - dict string values: {"queue": "intake_queue"}
- *   - UPPER_CASE constants: INTAKE_QUEUE = "intake_queue"
- *   - settings.X attributes via .env
- *
- * Dynamic keys with formatting (f"{q}_queue") are captured raw when
- * resolution fails — still useful as partial signal.
+ * Filtering pipeline (applied after resolution):
+ *   1. Skip Redis namespace keys — contain ":" but NOT "queue" in the name.
+ *      These are internal state keys like "agent:{name}:logs".
+ *   2. Skip unresolved variable passthrough — after resolveToken(), if the
+ *      result still looks like a plain Python identifier (snake_case, no
+ *      path separators, no http scheme) AND it does NOT end with a known
+ *      queue suffix (_queue, _key that refers to an actual queue), discard.
+ *      Examples of skipped: "queue", "queue_name", "dlq_name", "logs_key"
+ *      Examples of kept:    "intake_queue", "draft_queue", "classification_queue"
+ *   3. Skip obvious log/metrics keys: ends with "_log", "_logs", "_key"
+ *      unless the resolved name contains "queue".
  */
 
-// Captures: (command) ( queue_arg
-// queue_arg = string literal OR identifier (variable / constant / settings.X)
 const REDIS_CMD_RE =
   /\b(?:await\s+)?(?:[\w.]+\.)(rpush|lpush|xadd|publish|blpop|brpop|subscribe|xread)\s*\(\s*(f?["'][^"'\n]{1,120}["']|[A-Za-z_][\w.]*)/gi;
 
 const PUBLISH_CMDS = new Set(['rpush', 'lpush', 'xadd', 'publish']);
 const CONSUME_CMDS = new Set(['blpop', 'brpop', 'subscribe', 'xread']);
+
+/**
+ * Returns true if the resolved queue name looks like an unresolved variable.
+ * Heuristic: it's a pure snake_case identifier with no "queue" substring.
+ *
+ * Keep:  "intake_queue", "classification_queue", "summary_queue"  → false
+ * Skip:  "queue", "queue_name", "dlq_name", "logs_key", "key"     → true
+ */
+function isUnresolvedVariable(name: string): boolean {
+  // If it contains http scheme or path separator — it's a real value
+  if (name.startsWith('http') || name.includes('/')) return false;
+  // If it contains "queue" literally — it's a real inter-service queue name
+  if (name.includes('queue')) return false;
+  // If it looks like a plain identifier (no dots, no spaces, no dashes) — likely unresolved
+  if (/^[a-z_][a-z0-9_]*$/.test(name)) return true;
+  return false;
+}
 
 function extractRedisCalls(
   filePath: string,
@@ -135,25 +122,26 @@ function extractRedisCalls(
 
   REDIS_CMD_RE.lastIndex = 0;
   while ((match = REDIS_CMD_RE.exec(src)) !== null) {
-    const command   = match[1]!.toLowerCase();
-    const raw       = match[2]!.trim();
-    const resolved  = resolveToken(raw, varMap) ?? raw;
-    const line      = src.slice(0, match.index).split('\n').length;
+    const command  = match[1]!.toLowerCase();
+    const raw      = match[2]!.trim();
+    const resolved = resolveToken(raw, varMap) ?? raw;
+    const line     = src.slice(0, match.index).split('\n').length;
 
-    // Skip internal bookkeeping keys — agent:{name}:state / agent:{name}:logs
-    // These are not inter-service queues; they are Redis Hash / List used for
-    // local agent state. Heuristic: skip if resolved value contains ":" (Redis
-    // key namespace separator) or starts with "agent:"
+    // Filter 1: internal Redis namespace keys (contain ":" but not "queue")
     if (resolved.includes(':') && !resolved.includes('queue')) continue;
 
-    const direction = PUBLISH_CMDS.has(command) ? 'publish' : 'consume';
-
-    // Skip obvious false positives from VariableMap passthrough entries
-    // (e.g. dict values stored under their own name like map["intake_queue"] = "intake_queue")
-    // Detect: resolved === raw stripped of quotes — means it's just a literal echoed back.
+    // Filter 2: unresolved variable names that don't contain "queue"
     const rawStripped = raw.replace(/^[fF]?["']|["']$/g, '');
-    const queueName  = resolved === rawStripped ? rawStripped : resolved;
+    const queueName   = resolved === rawStripped ? rawStripped : resolved;
+    if (isUnresolvedVariable(queueName)) continue;
 
+    // Filter 3: log/metrics/state keys
+    if (
+      (queueName.endsWith('_key') || queueName.endsWith('_log') || queueName.endsWith('_logs')) &&
+      !queueName.includes('queue')
+    ) continue;
+
+    const direction = PUBLISH_CMDS.has(command) ? 'publish' : 'consume';
     calls.push({ queueName, direction, command, file: filePath, line });
   }
 
@@ -257,7 +245,6 @@ export async function parsePythonProject(
   const schemas:    RawSchema[]    = [];
   let   envConfig:  EnvEntry[]     = [];
 
-  // First pass: collect env entries so variable resolver can expand settings.X
   const envFromFile = parseEnvFile(join(rootDir, '.env'));
   const envSeen     = new Set<string>(envFromFile.map((e) => e.key));
   let   codeEnv:    EnvEntry[]     = [];
@@ -273,13 +260,11 @@ export async function parsePythonProject(
     codeEnv.push(...extractEnvConfig(src));
   }
 
-  // Merge: .env values take precedence, code env fills in missing keys
   const mergedEnv: EnvEntry[] = [
     ...envFromFile,
     ...codeEnv.filter((e) => !envSeen.has(e.key)),
   ];
 
-  // Second pass: extract routes, http calls, redis calls, schemas
   for (const filePath of pyFiles) {
     let src: string;
     try {
@@ -294,7 +279,6 @@ export async function parsePythonProject(
     envConfig.push(...extractEnvConfig(src));
   }
 
-  // Deduplicate env: .env file wins
   const finalSeen = new Set<string>(envFromFile.map((e) => e.key));
   envConfig = [
     ...envFromFile,
