@@ -36,6 +36,19 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  layer-2-graph:
+    dependencies:
+      '@smart-map/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      tsup:
+        specifier: ^8.0.0
+        version: 8.5.1(typescript@5.9.3)
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   shared:
     devDependencies:
       tsup:
