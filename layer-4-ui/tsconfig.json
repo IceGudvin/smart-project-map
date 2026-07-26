@@ -10,7 +10,7 @@
     "exactOptionalPropertyTypes": true,
     "baseUrl": ".",
     "paths": {
-      "@spm/shared": ["../shared/src/index.ts"],
+      "@smart-map/shared": ["../shared/src/index.ts"],
       "@/*": ["src/*"]
     }
   },
