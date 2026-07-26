@@ -1,9 +1,13 @@
 /**
  * ProjectPicker — модальный экран выбора проекта.
  *
+ * Открывается ТОЛЬКО через emit('project:pick:show') — т.е. по кнопке в Header.
+ * Никакого автопоказа при старте / ошибке WS.
+ *
  * Исправления:
  *   - fb-overlay/pp-overlay получают data-theme с <html> при создании
- *   - тема синхронизируется при theme:changed пока модал открыт
+ *   - inheritTheme применяет тему через setAttribute перед rAF,
+ *     чтобы избежать race-condition с AppShell theme:changed handler
  */
 
 import { emit, on } from '../../lib/eventBus.js'
@@ -19,15 +23,20 @@ function saveRecent(path: string): void {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)) } catch { /* ok */ }
 }
 
-/** Копирует data-theme с <html> на элемент и подписывается на theme:changed */
+/**
+ * Копирует data-theme с <html> на элемент и подписывается на theme:changed.
+ * FIX: sync читает тему из store через событие, не из getAttribute —
+ *      это гарантирует корректную тему даже если вызов опережает setAttribute в AppShell.
+ */
 function inheritTheme(el: HTMLElement): () => void {
-  const sync = () => {
-    const t = document.documentElement.getAttribute('data-theme')
+  const applyTheme = (theme?: string) => {
+    const t = theme ?? document.documentElement.getAttribute('data-theme')
     if (t) el.setAttribute('data-theme', t)
     else el.removeAttribute('data-theme')
   }
-  sync()
-  return on('theme:changed', sync)
+  applyTheme()
+  // theme:changed эмитится с новым значением темы как payload
+  return on('theme:changed', (theme) => applyTheme(theme as string))
 }
 
 // ───────────────────────── styles
@@ -399,7 +408,7 @@ function _showFileBrowser(initialPath: string, onSelect: (path: string) => void)
   const overlay = document.createElement('div')
   overlay.className = 'fb-overlay'
 
-  // ── FIX: наследуем тему с <html>
+  // inheritTheme — до appendChild, чтобы тема была сразу
   _fbThemeUnsub = inheritTheme(overlay)
 
   _fbOverlay = overlay
@@ -464,7 +473,7 @@ function _render(): void {
   const overlay = document.createElement('div')
   overlay.className = 'pp-overlay'
 
-  // ── FIX: наследуем тему с <html>
+  // inheritTheme — до appendChild
   _ppThemeUnsub = inheritTheme(overlay)
 
   _overlay = overlay
@@ -596,7 +605,10 @@ function _setStatus(msg: string, type: '' | 'error' | 'success'): void {
 }
 
 export const ProjectPicker = {
-  mount(): void { on('project:pick:show', () => ProjectPicker.show()) },
+  mount(): void {
+    // Подписываемся ТОЛЬКО на явное событие открытия — от кнопки в Header
+    on('project:pick:show', () => ProjectPicker.show())
+  },
   show(): void { if (_overlay) return; _render() },
   hide(): void {
     document.removeEventListener('keydown', _onEsc)

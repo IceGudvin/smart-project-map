@@ -5,20 +5,16 @@
  *   { type: 'graph:full',     payload: GraphModel }   — полный снимок
  *   { type: 'graph:patch',    payload: GraphDiff  }   — инкрементальный дифф
  *   { type: 'server:status',  payload: { ready: boolean; projectDir?: string } }
- *                                                     — статус сервера при подключении
  *
  * Логика переподключения:
- *   - Бесконечные попытки с backoff 1s / 2s / 4s (после 3-й попытки — фиксированно 4s)
- *   - emit('ws:status', 'disconnected') при обрыве
+ *   - Бесконечные попытки с backoff 1s / 2s / 4s
  *
  * Фоллбэк:
  *   - Если graph:full не пришёл за 2с после open — emit('graph:refresh')
- *     → AppShell делает GET /graph
  *
- * Показ ProjectPicker:
- *   - Если WS не смог подключиться вообще (сервер не запущен) — emit('project:pick:show')
- *   - Если WS подключился, но сервер ответил server:status { ready: false }
- *     (проект не задан) — тоже emit('project:pick:show')
+ * ProjectPicker:
+ *   - НЕ показывается автоматически ни при каких условиях.
+ *   - Открывается ТОЛЬКО через кнопку «Подключить репозиторий» в Header.
  */
 
 import { emit } from './eventBus.js'
@@ -32,16 +28,10 @@ let _ws: WebSocket | null = null
 let _reconnectAttempt = 0
 let _fallbackTimer: ReturnType<typeof setTimeout> | null = null
 let _graphReceived = false
-let _everConnected = false
 let _stopped = false
-
-// Флаг: пикер уже был показан в этой сессии страницы
-// Сбрасывается при смене проекта (project:changed)
-let _pickerShown = false
 
 export function connectWs(): void {
   _stopped = false
-  _pickerShown = false
   _connect()
 }
 
@@ -56,17 +46,6 @@ export function disconnectWs(): void {
   emit('ws:status', 'disconnected')
 }
 
-/** Вызывается из AppShell/ProjectPicker после успешного POST /server/start */
-export function resetPickerShown(): void {
-  _pickerShown = false
-}
-
-function _showPickerOnce(): void {
-  if (_pickerShown) return
-  _pickerShown = true
-  emit('project:pick:show', undefined)
-}
-
 function _connect(): void {
   if (_stopped) return
 
@@ -76,7 +55,6 @@ function _connect(): void {
 
   _ws.onopen = () => {
     _reconnectAttempt = 0
-    _everConnected = true
     emit('ws:status', 'connected')
     _graphReceived = false
 
@@ -112,13 +90,13 @@ function _connect(): void {
       return
     }
 
-    // Сервер сообщает что проект не задан — показываем ProjectPicker
+    // server:status — не показываем пикер автоматически,
+    // просто отменяем фоллбэк если проект не задан
     if (msg.type === 'server:status') {
       const status = msg.payload as { ready: boolean; projectDir?: string }
       if (!status.ready) {
         _clearFallback()
-        _graphReceived = true // не ждём graph:full — он не придёт
-        _showPickerOnce()
+        _graphReceived = true
       }
       return
     }
@@ -132,11 +110,6 @@ function _connect(): void {
 
     if (_stopped) return
 
-    // Если ни разу не подключались — сервер не запущен, показываем пикер
-    if (!_everConnected) {
-      _showPickerOnce()
-    }
-
     const delay = RECONNECT_DELAYS[Math.min(_reconnectAttempt, RECONNECT_DELAYS.length - 1)]
     _reconnectAttempt++
     console.log(`[wsClient] reconnecting in ${delay}ms (attempt ${_reconnectAttempt})...`)
@@ -144,7 +117,7 @@ function _connect(): void {
   }
 
   _ws.onerror = () => {
-    // onclose будет вызван следом — там обрабатываем
+    // onclose вызовется следом
   }
 }
 

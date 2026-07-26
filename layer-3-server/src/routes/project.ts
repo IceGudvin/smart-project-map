@@ -13,9 +13,12 @@ export function registerProjectRoutes(app: FastifyInstance): void {
    * POST /server/start
    * Body: { projectDir: string }
    *
-   * Позволяет UI передать путь к проекту в рантайме.
-   * Сервер переключает projectDir, запускает сканирование
-   * и рассылает graph:full по WebSocket.
+   * Переключает projectDir, сразу отвечает 200, затем запускает скан
+   * и рассылает graph:full / graph:patch по WebSocket.
+   *
+   * FIX: setImmediate-колбэк полностью обёрнут в try/catch,
+   *      reply.send вызывается синхронно до любых async-операций —
+   *      это исключает случайный 500 от Fastify из-за утечки исключения в stream.
    */
   app.post<{ Body: StartBody }>('/server/start', {
     schema: {
@@ -38,41 +41,42 @@ export function registerProjectRoutes(app: FastifyInstance): void {
       })
     }
 
-    // Переключаем projectDir в scanner
+    // Переключаем projectDir
     setProjectDir(dir)
     console.log(`[project] switched to: ${dir}`)
 
-    // Запускаем сканирование асинхронно — не блокируем ответ
-    reply
+    // Отвечаем немедленно — до любого async-кода
+    void reply
       .header('X-Project-Dir', dir)
       .send({ ok: true, projectDir: dir })
 
-    // После ответа — сканируем и бродкастим
-    setImmediate(async () => {
-      try {
-        const { graph, diff } = await runScan()
-        if (diff) {
-          broadcastPatch(diff)
-        } else {
-          broadcastFull(graph)
+    // Сканируем и бродкастим асинхронно, уже после ответа
+    setImmediate(() => {
+      void (async () => {
+        try {
+          const { graph, diff } = await runScan()
+          if (diff) {
+            broadcastPatch(diff)
+          } else {
+            broadcastFull(graph)
+          }
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err)
+          console.error('[project] scan after start failed:', message)
         }
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err)
-        console.error('[project] scan after start failed:', message)
-      }
+      })()
     })
   })
 
   /**
    * GET /server/status
-   * Возвращает текущий projectDir и статистику последнего скана.
    */
   app.get('/server/status', async (_req, reply) => {
-    const { getCachedGraph } = await import('../scanner.js')
-    const graph = getCachedGraph()
+    const scannerMod = await import('../scanner.js')
+    const graph = scannerMod.getCachedGraph()
     reply.send({
       ok: true,
-      projectDir: (await import('../scanner.js') as { _projectDir?: string })._projectDir ?? null,
+      projectDir: scannerMod._projectDir || null,
       graph: graph
         ? { nodes: graph.nodes.length, edges: graph.edges.length, updatedAt: graph.updatedAt }
         : null,
