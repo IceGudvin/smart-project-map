@@ -1,3 +1,22 @@
+## [2026-07-26] — Bugfix: AppShell — TypeError: X is not a constructor (Issue #6)
+
+### Исправлено
+- `AppShell/index.ts` — критический баг: `Canvas`, `DetailPanel`, `EdgeTooltip` экспортируются как singleton-объекты (`export const X = {}`), а AppShell вызывал `new X()` — это бросало `TypeError: X is not a constructor` и завешивало старт приложения
+- `new Canvas(canvasWrapEl)` → `Canvas.mount(canvasWrapEl)`
+- `new DetailPanel()` → `DetailPanel.mount(dpEl)`
+- `new EdgeTooltip()` → `EdgeTooltip.mount()` (сам монтируется в body)
+- `new Sidebar(sidebarEl)` → `new Sidebar()` + `sidebar.mount(sidebarEl)` (у Sidebar нет аргумента в конструкторе, el передаётся в `mount(el)`)
+- `this.sidebar.update()` → `this.sidebar.update(store.graph)` (метод требует `GraphModel`)
+- `this.canvas.update()` — удалён (метод не существует, Canvas реагирует через eventBus)
+- `theme:changed` — добавлен `document.documentElement.setAttribute('data-theme', theme)` (не пропускали CSS-тему)
+- `sidebar:collapsed` — AppShell теперь синхронизирует `.app-sidebar.collapsed` класс
+
+### Зафиксировано в репо
+- Коммит: `5e88c6c`
+- Roadmap Issue #6 — чекбокс 🐛 Bugfix — все отмечены ✅
+
+---
+
 ## [2026-07-26] — Layer 4: Интеграция layer-3-server — финализация (Issue #6)
 
 ### Добавлено
