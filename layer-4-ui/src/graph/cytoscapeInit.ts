@@ -1,29 +1,20 @@
 /**
- * cytoscapeInit.ts — Полная реализация инициализации Cytoscape-графа.
- *
- * Отвечает за:
- *   - Регистрацию плагина dagre
- *   - Стили узлов по типу (roundrectangle / ellipse / hexagon)
- *   - Фоновые иконки через Simple Icons CDN
- *   - Состояния highlighted / dimmed с плавным переходом
- *   - DataFlow анимацию рёбер через line-dash-offset + JS-таймер
- *   - Обработчики: tap node/bg, mouseover/move/out edge
+ * cytoscapeInit.ts
  */
 
 import cytoscape from 'cytoscape'
-import type { Core, ElementDefinition, Stylesheet, NodeSingular, EdgeSingular } from 'cytoscape'
+import type { Core, ElementDefinition, StylesheetCSS, NodeSingular, EdgeSingular } from 'cytoscape'
 import dagre from 'cytoscape-dagre'
-import type { GraphModel, ServiceNode, Edge, NodeType, Framework } from '../../../shared/src/graph.js'
+import type { GraphModel, ServiceNode, Edge, NodeType } from '@smart-map/shared'
 import { emit } from '../lib/eventBus.js'
 import { store } from '../store.js'
 
-cytoscape.use(dagre as any)
+declare module 'cytoscape-dagre'
 
-// ================================================================ constants
+cytoscape.use(dagre as any)
 
 const SIMPLE_ICONS_CDN = 'https://cdn.simpleicons.org'
 
-/** Маппинг framework/инфра → слаг Simple Icons */
 const ICON_SLUG: Record<string, string> = {
   nextjs:         'nextdotjs',
   fastapi:        'fastapi',
@@ -43,28 +34,30 @@ const ICON_SLUG: Record<string, string> = {
   elasticsearch:  'elasticsearch',
 }
 
-/** Цвет узла в light/dark по NodeType */
 const NODE_COLOR: Record<NodeType, { light: string; dark: string }> = {
   service:        { light: '#01696f', dark: '#4f98a3' },
   infrastructure: { light: '#437a22', dark: '#6daa45' },
   external:       { light: '#964219', dark: '#bb653b' },
 }
 
-/** Форма узла по NodeType + роль */
 function nodeShape(node: ServiceNode): string {
   if (node.nodeType === 'service') return 'roundrectangle'
-  // infrastructure: DB → ellipse, кэш / очередь → hexagon
   const dbFrameworks = new Set(['postgres', 'postgresql', 'mysql', 'mongodb', 'elasticsearch'])
-  const isDb = dbFrameworks.has(node.id) || dbFrameworks.has(node.framework)
+  const isDb = dbFrameworks.has(node.id) || dbFrameworks.has(node.framework ?? '')
   return isDb ? 'ellipse' : 'hexagon'
 }
 
-/** Слаг иконки для Simple Icons CDN */
 export function getIconSlug(node: ServiceNode): string | null {
-  return ICON_SLUG[node.id] ?? ICON_SLUG[node.framework] ?? null
+  return ICON_SLUG[node.id] ?? ICON_SLUG[node.framework ?? ''] ?? null
 }
 
-// ================================================================ element builders
+// ── edge key (дедупликация) ────────────────────────────────────────────────
+
+export function edgeKey(edge: Edge): string {
+  return `${edge.from}->${edge.to}::${edge.method ?? ''}:${edge.path ?? ''}`
+}
+
+// ── element builders ──────────────────────────────────────────────────────
 
 function buildNodeElement(node: ServiceNode, isDark: boolean): ElementDefinition {
   const color = isDark
@@ -72,7 +65,6 @@ function buildNodeElement(node: ServiceNode, isDark: boolean): ElementDefinition
     : NODE_COLOR[node.nodeType]?.light ?? NODE_COLOR.service.light
 
   const slug    = getIconSlug(node)
-  // Simple Icons выдает белые иконки на тёмном фоне (последний сегмент пути = HEX)
   const iconUrl = slug ? `${SIMPLE_ICONS_CDN}/${slug}/ffffff` : ''
 
   return {
@@ -80,7 +72,7 @@ function buildNodeElement(node: ServiceNode, isDark: boolean): ElementDefinition
       id:        node.id,
       label:     node.name,
       nodeType:  node.nodeType,
-      framework: node.framework,
+      framework: node.framework ?? '',
       shape:     nodeShape(node),
       color,
       iconUrl,
@@ -91,30 +83,29 @@ function buildNodeElement(node: ServiceNode, isDark: boolean): ElementDefinition
 function buildEdgeElement(edge: Edge): ElementDefinition {
   return {
     data: {
-      id:           `${edge.from}->${edge.to}::${edge.method}:${edge.path}`,
+      id:           edgeKey(edge),
       source:       edge.from,
       target:       edge.to,
-      method:       edge.method,
-      path:         edge.path,
+      method:       edge.method ?? '',
+      path:         edge.path ?? '',
       inputSchema:  edge.inputPayload?.schemaName  ?? '',
       outputSchema: edge.outputPayload?.schemaName ?? '',
     },
   }
 }
 
-// ================================================================ stylesheet
+// ── stylesheet ────────────────────────────────────────────────────────────
 
-function buildStylesheet(isDark: boolean): Stylesheet[] {
+function buildStylesheet(isDark: boolean): StylesheetCSS[] {
   const primary   = isDark ? '#4f98a3' : '#01696f'
   const textColor = isDark ? '#d1d0ce' : '#1e1d19'
   const dimText   = isDark ? '#4e4d4b' : '#b0afa9'
   const dimBorder = isDark ? 0.12 : 0.10
 
   return [
-    // ---- base node
     {
       selector: 'node',
-      style: {
+      css: {
         'shape':                'data(shape)' as any,
         'background-color':     'data(color)' as any,
         'background-opacity':   0.18,
@@ -126,13 +117,11 @@ function buildStylesheet(isDark: boolean): Stylesheet[] {
         'text-halign':          'center',
         'color':                textColor,
         'font-size':            12,
-        // Cytoscape поддерживает только одно имя шрифта без кавычек
         'font-family':          'Inter',
         'font-weight':          '500' as any,
         'width':                120,
         'height':               44,
         'padding':              '10px' as any,
-        // Иконка через background-image
         'background-image':     'data(iconUrl)' as any,
         'background-fit':       'contain',
         'background-clip':      'none',
@@ -141,62 +130,35 @@ function buildStylesheet(isDark: boolean): Stylesheet[] {
         'background-position-x': '50%',
         'background-position-y': '30%',
         'text-margin-y':        10,
-        // Плавный переход
         'transition-property':  'background-opacity border-width border-opacity color' as any,
         'transition-duration':  '200ms' as any,
         'transition-timing-function': 'ease-out' as any,
       },
     },
-    // ---- node без иконки
     {
       selector: 'node[iconUrl = ""]',
-      style: {
-        'background-width':  '0%',
-        'background-height': '0%',
+      css: {
+        'background-width':  '0%' as any,
+        'background-height': '0%' as any,
         'text-margin-y':     0,
       },
     },
-    // ---- hover
-    {
-      selector: 'node.hover',
-      style: {
-        'background-opacity': 0.30,
-        'border-width':       3,
-      },
-    },
-    // ---- selected
-    {
-      selector: 'node:selected',
-      style: {
-        'background-opacity': 0.38,
-        'border-width':       3,
-        'border-opacity':     1,
-      },
-    },
-    // ---- highlighted
-    {
-      selector: 'node.highlighted',
-      style: {
-        'background-opacity': 0.38,
-        'border-width':       3,
-        'border-opacity':     1,
-      },
-    },
-    // ---- dimmed
+    { selector: 'node.hover',        css: { 'background-opacity': 0.30, 'border-width': 3 } },
+    { selector: 'node:selected',     css: { 'background-opacity': 0.38, 'border-width': 3, 'border-opacity': 1 } },
+    { selector: 'node.highlighted',  css: { 'background-opacity': 0.38, 'border-width': 3, 'border-opacity': 1 } },
     {
       selector: 'node.dimmed',
-      style: {
+      css: {
         'background-opacity': 0.05,
         'border-opacity':     dimBorder,
         'color':              dimText,
-        'background-width':   '0%',
-        'background-height':  '0%',
+        'background-width':   '0%' as any,
+        'background-height':  '0%' as any,
       },
     },
-    // ---- base edge
     {
       selector: 'edge',
-      style: {
+      css: {
         'width':               2,
         'line-color':          primary,
         'line-opacity':        0.45,
@@ -208,18 +170,10 @@ function buildStylesheet(isDark: boolean): Stylesheet[] {
         'transition-duration': '200ms' as any,
       },
     },
-    // ---- edge hover
-    {
-      selector: 'edge.hover',
-      style: {
-        'line-opacity': 0.85,
-        'width':        3,
-      },
-    },
-    // ---- highlighted edge (DataFlow анимация)
+    { selector: 'edge.hover',       css: { 'line-opacity': 0.85, 'width': 3 } },
     {
       selector: 'edge.highlighted',
-      style: {
+      css: {
         'width':             3,
         'line-opacity':      1,
         'line-style':        'dashed',
@@ -228,65 +182,51 @@ function buildStylesheet(isDark: boolean): Stylesheet[] {
         'target-arrow-shape': 'triangle',
       },
     },
-    // ---- dimmed edge
-    {
-      selector: 'edge.dimmed',
-      style: {
-        'line-opacity': 0.07,
-        'width':        1,
-      },
-    },
+    { selector: 'edge.dimmed', css: { 'line-opacity': 0.07, 'width': 1 } },
   ]
 }
 
-// ================================================================ DataFlow animation
+// ── DataFlow animation ────────────────────────────────────────────────────
 
 let _dashTimer: ReturnType<typeof setInterval> | null = null
 let _dashOffset = 0
 
-/** Запустить анимацию дашед на рёбрах с классом highlighted */
 export function startDashAnimation(cy: Core): void {
   if (_dashTimer) return
   _dashOffset = 0
   _dashTimer = setInterval(() => {
     _dashOffset = (_dashOffset - 2 + 10000) % 10000
     cy.edges('.highlighted').style('line-dash-offset', _dashOffset)
-  }, 40) // ~25fps
+  }, 40)
 }
 
-/** Остановить анимацию */
 export function stopDashAnimation(cy: Core): void {
   if (_dashTimer) { clearInterval(_dashTimer); _dashTimer = null }
   cy.edges('.highlighted').style('line-dash-offset', 0)
 }
 
-// ================================================================ highlight helpers
+// ── highlight helpers ─────────────────────────────────────────────────────
 
 export interface DataflowPathDef {
   name:    string
   nodeIds: string[]
 }
 
-/** Три предустановленных DataFlow-пути */
 export const DATAFLOW_PATHS: DataflowPathDef[] = [
   { name: 'Login Flow',  nodeIds: ['frontend', 'backend', 'postgres', 'redis'] },
   { name: 'File Upload', nodeIds: ['frontend', 'backend', 'minio'] },
   { name: 'Auth Check',  nodeIds: ['frontend', 'backend'] },
 ]
 
-/** Применить highlighted/dimmed по DataFlow-пути */
 export function applyDataflowHighlight(cy: Core, pathIndex: 0 | 1 | 2): void {
   const path = DATAFLOW_PATHS[pathIndex]
   const activeNodeIds = new Set(path.nodeIds)
-
   cy.batch(() => {
     cy.elements().removeClass('highlighted dimmed')
-
     cy.nodes().forEach((node: NodeSingular) => {
       if (activeNodeIds.has(node.id())) node.addClass('highlighted')
       else                              node.addClass('dimmed')
     })
-
     cy.edges().forEach((edge: EdgeSingular) => {
       const srcOk = activeNodeIds.has(edge.data('source') as string)
       const tgtOk = activeNodeIds.has(edge.data('target') as string)
@@ -296,12 +236,10 @@ export function applyDataflowHighlight(cy: Core, pathIndex: 0 | 1 | 2): void {
   })
 }
 
-/** Снять все DataFlow-классы */
 export function clearDataflowHighlight(cy: Core): void {
   cy.elements().removeClass('highlighted dimmed')
 }
 
-/** Подсветить выбранный узел + соседей */
 export function highlightSelected(cy: Core, nodeId: string): void {
   cy.batch(() => {
     cy.elements().removeClass('highlighted dimmed')
@@ -314,46 +252,47 @@ export function highlightSelected(cy: Core, nodeId: string): void {
   })
 }
 
-// ================================================================ graph sync
+// ── graph sync ────────────────────────────────────────────────────────────
 
 /**
- * Синхронизирует элементы cy с новым GraphModel (дельта).
+ * Полная синхронизация cy с GraphModel.
+ * Перед добавлением рёбер — дедупликация по edgeKey.
  */
 export function syncGraph(cy: Core, graph: GraphModel, isDark: boolean): void {
   cy.batch(() => {
     const existingNodeIds = new Set(cy.nodes().map((n: NodeSingular) => n.id()))
     const existingEdgeIds = new Set(cy.edges().map((e: EdgeSingular) => e.id()))
 
+    // Добавить новые узлы
     for (const node of graph.nodes) {
       if (!existingNodeIds.has(node.id)) cy.add(buildNodeElement(node, isDark))
     }
-    const newNodeIds = new Set(graph.nodes.map(n => n.id))
+    // Удалить пропавшие узлы
+    const newNodeIds = new Set(graph.nodes.map((n: ServiceNode) => n.id))
     cy.nodes().forEach((n: NodeSingular) => { if (!newNodeIds.has(n.id())) n.remove() })
 
+    // Дедуплицировать рёбра перед добавлением
+    const seen = new Set<string>(existingEdgeIds)
     for (const edge of graph.edges) {
-      const eid = `${edge.from}->${edge.to}::${edge.method}:${edge.path}`
-      if (!existingEdgeIds.has(eid)) cy.add(buildEdgeElement(edge))
+      const eid = edgeKey(edge)
+      if (!seen.has(eid)) { seen.add(eid); cy.add(buildEdgeElement(edge)) }
     }
-    const newEdgeIds = new Set(
-      graph.edges.map(e => `${e.from}->${e.to}::${e.method}:${e.path}`)
-    )
+    // Удалить пропавшие рёбра
+    const newEdgeIds = new Set(graph.edges.map((e: Edge) => edgeKey(e)))
     cy.edges().forEach((e: EdgeSingular) => { if (!newEdgeIds.has(e.id())) e.remove() })
   })
 }
 
-// ================================================================ event handlers
+// ── event handlers ────────────────────────────────────────────────────────
 
 function attachEventHandlers(cy: Core): void {
-  // ---- tap node → node:select
   cy.on('tap', 'node', (evt) => {
-    const node = evt.target as NodeSingular
-    const id   = node.id()
+    const id = (evt.target as NodeSingular).id()
     store.selectNode(id)
     emit('node:select', id)
     if (!store.dataflowMode) highlightSelected(cy, id)
   })
 
-  // ---- tap background → node:deselect
   cy.on('tap', (evt) => {
     if (evt.target === cy) {
       store.selectNode(null)
@@ -362,7 +301,6 @@ function attachEventHandlers(cy: Core): void {
     }
   })
 
-  // ---- node hover
   cy.on('mouseover', 'node', (evt) => {
     ;(evt.target as NodeSingular).addClass('hover')
     ;(cy.container() as HTMLElement | null)?.style.setProperty('cursor', 'pointer')
@@ -372,7 +310,6 @@ function attachEventHandlers(cy: Core): void {
     ;(cy.container() as HTMLElement | null)?.style.setProperty('cursor', 'default')
   })
 
-  // ---- edge hover → EdgeTooltip
   cy.on('mouseover', 'edge', (evt) => {
     ;(evt.target as EdgeSingular).addClass('hover')
     ;(cy.container() as HTMLElement | null)?.style.setProperty('cursor', 'crosshair')
@@ -399,7 +336,7 @@ function attachEventHandlers(cy: Core): void {
   })
 }
 
-// ================================================================ layout
+// ── layout ────────────────────────────────────────────────────────────────
 
 export function runLayout(cy: Core, direction: 'TB' | 'LR' = 'TB'): void {
   cy.layout({
@@ -411,7 +348,11 @@ export function runLayout(cy: Core, direction: 'TB' | 'LR' = 'TB'): void {
   } as any).run()
 }
 
-// ================================================================ main export
+export function updateTheme(cy: Core, isDark: boolean): void {
+  cy.style(buildStylesheet(isDark) as any)
+}
+
+// ── init ──────────────────────────────────────────────────────────────────
 
 export interface CytoscapeInitOptions {
   container: HTMLElement
@@ -419,24 +360,28 @@ export interface CytoscapeInitOptions {
   isDark?:   boolean
 }
 
-/**
- * Инициализирует Cytoscape, навешивает стили, запускает лейаут, привязывает события.
- */
 export function initCytoscape({ container, graph, isDark = true }: CytoscapeInitOptions): Core {
+  // Дедуплицируем рёбра по ключу перед передачей в Cytoscape
+  const seenEdges = new Set<string>()
+  const uniqueEdges = graph.edges.filter((e: Edge) => {
+    const k = edgeKey(e)
+    if (seenEdges.has(k)) return false
+    seenEdges.add(k)
+    return true
+  })
+
   const elements: ElementDefinition[] = [
-    ...graph.nodes.map(n => buildNodeElement(n, isDark)),
-    ...graph.edges.map(e => buildEdgeElement(e)),
+    ...graph.nodes.map((n: ServiceNode) => buildNodeElement(n, isDark)),
+    ...uniqueEdges.map((e: Edge) => buildEdgeElement(e)),
   ]
 
   const cy = cytoscape({
     container,
     elements,
-    style:           buildStylesheet(isDark),
+    style:           buildStylesheet(isDark) as any,
     layout:          { name: 'preset' },
     minZoom:         0.25,
     maxZoom:         3,
-    // wheelSensitivity намеренно не задаётся — используем дефолт Cytoscape (1)
-    // чтобы скролл работал одинаково на всех мышах и ОС
     autoungrabify:   false,
     autounselectify: false,
   })
@@ -446,11 +391,4 @@ export function initCytoscape({ container, graph, isDark = true }: CytoscapeInit
   emit('cy:ready', cy)
 
   return cy
-}
-
-/**
- * Перестроить стили после смены темы.
- */
-export function updateTheme(cy: Core, isDark: boolean): void {
-  cy.style(buildStylesheet(isDark) as any)
 }

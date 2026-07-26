@@ -1,26 +1,10 @@
 /**
  * store.ts — Реактивное состояние layer-4-ui.
- *
- * Хранит:
- *   graph          — текущий GraphModel (узлы + рёбра + updatedAt)
- *   selectedNodeId — выбранный узел (null = ничего не выбрано)
- *   dataflowMode   — включён ли DataFlow-режим
- *   activeDataflowPath — 0=LoginFlow / 1=FileUpload / 2=AuthCheck
- *   wsStatus       — состояние WebSocket-соединения
- *   filter         — строка поиска/фильтрации
- *   theme          — 'dark' | 'light'
- *
- * Не использует localStorage (sandbox-ограничение).
- * Используется: AppShell, Header, Sidebar, Canvas, DetailPanel.
  */
 
-import type { GraphModel, ServiceNode, Edge, GraphDiff } from '../../../shared/src/graph.js'
-
-// ----------------------------------------------------------------- types
+import type { GraphModel, ServiceNode, Edge, GraphDiff } from '@smart-map/shared'
 
 export type WsStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
-
-/** 0 = Login Flow, 1 = File Upload, 2 = Auth Check */
 export type DataflowPathIndex = 0 | 1 | 2
 
 export const DATAFLOW_PATHS: Record<DataflowPathIndex, string> = {
@@ -40,7 +24,6 @@ export interface AppState {
 }
 
 export interface Store extends AppState {
-  // Мутации
   setGraph(data: GraphModel): void
   applyDiff(diff: GraphDiff): void
   selectNode(id: string | null): void
@@ -50,17 +33,11 @@ export interface Store extends AppState {
   setWsStatus(status: WsStatus): void
   setFilter(q: string): void
   setTheme(t: 'dark' | 'light'): void
-
-  // Чтение
   getNode(id: string): ServiceNode | undefined
   getEdgesFor(nodeId: string): Edge[]
   getActivePathName(): string
-
-  // Подписка
   subscribe(cb: (state: AppState) => void): () => void
 }
-
-// ----------------------------------------------------------------- factory
 
 export function initStore(): Store {
   let state: AppState = {
@@ -70,24 +47,14 @@ export function initStore(): Store {
     activeDataflowPath:  0,
     wsStatus:            'disconnected',
     filter:              '',
-    theme:               window.matchMedia('(prefers-color-scheme: dark)').matches
-                           ? 'dark'
-                           : 'light',
+    theme:               window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
   }
 
   const listeners = new Set<(s: AppState) => void>()
-
-  function notify() {
-    for (const cb of listeners) cb(state)
-  }
-
-  function patch(partial: Partial<AppState>) {
-    state = { ...state, ...partial }
-    notify()
-  }
+  function notify() { for (const cb of listeners) cb(state) }
+  function patch(partial: Partial<AppState>) { state = { ...state, ...partial }; notify() }
 
   return {
-    // ---------------------------------------------------------------- getters
     get graph()              { return state.graph },
     get selectedNodeId()     { return state.selectedNodeId },
     get dataflowMode()       { return state.dataflowMode },
@@ -96,104 +63,45 @@ export function initStore(): Store {
     get filter()             { return state.filter },
     get theme()              { return state.theme },
 
-    // --------------------------------------------------------------- mutations
+    setGraph(data) { patch({ graph: data }) },
 
-    setGraph(data) {
-      patch({ graph: data })
-    },
-
-    /**
-     * Применяет инкрементальный diff от graph:update.
-     * addedNodes   — добавляются в конец массива
-     * removedNodeIds — удаляются по id
-     * updatedNodes — заменяют существующие узлы с тем же id
-     * addedEdges   — добавляются
-     * removedEdgeIds — удаляются (формат id = `${from}->${to}->${method}-${path}`)
-     */
     applyDiff(diff) {
       const { addedNodes, removedNodeIds, updatedNodes, addedEdges, removedEdgeIds } = diff
+      const edgeId = (e: Edge) => `${e.from}->${e.to}->${e.method}-${e.path}`
 
-      let nodes = state.graph.nodes
-        .filter(n => !removedNodeIds.includes(n.id))
-        .map(n => {
-          const upd = updatedNodes.find(u => u.id === n.id)
+      let nodes: ServiceNode[] = state.graph.nodes
+        .filter((n: ServiceNode) => !removedNodeIds.includes(n.id))
+        .map((n: ServiceNode) => {
+          const upd = updatedNodes.find((u: ServiceNode) => u.id === n.id)
           return upd ?? n
         })
       nodes = nodes.concat(addedNodes)
 
-      const edgeId = (e: Edge) => `${e.from}->${e.to}->${e.method}-${e.path}`
-      let edges = state.graph.edges.filter(e => !removedEdgeIds.includes(edgeId(e)))
+      let edges: Edge[] = state.graph.edges.filter((e: Edge) => !removedEdgeIds.includes(edgeId(e)))
       edges = edges.concat(addedEdges)
 
       patch({
-        graph: {
-          nodes,
-          edges,
-          updatedAt: Date.now(),
-        },
-        // Если выбранный узел удалён — сбрасываем выбор
+        graph: { nodes, edges, updatedAt: Date.now() },
         selectedNodeId: state.selectedNodeId && removedNodeIds.includes(state.selectedNodeId)
           ? null
           : state.selectedNodeId,
       })
     },
 
-    selectNode(id) {
-      patch({ selectedNodeId: id })
-    },
+    selectNode(id)            { patch({ selectedNodeId: id }) },
+    setDataflowMode(enabled)  { patch({ dataflowMode: enabled }) },
+    setActiveDataflowPath(i)  { patch({ activeDataflowPath: i }) },
+    nextDataflowPath()        { patch({ activeDataflowPath: ((state.activeDataflowPath + 1) % 3) as DataflowPathIndex }) },
+    setWsStatus(status)       { patch({ wsStatus: status }) },
+    setFilter(q)              { patch({ filter: q }) },
+    setTheme(t)               { document.documentElement.setAttribute('data-theme', t); patch({ theme: t }) },
 
-    setDataflowMode(enabled) {
-      patch({ dataflowMode: enabled })
-    },
+    getNode(id)     { return state.graph.nodes.find((n: ServiceNode) => n.id === id) },
+    getEdgesFor(nodeId) { return state.graph.edges.filter((e: Edge) => e.from === nodeId || e.to === nodeId) },
+    getActivePathName() { return DATAFLOW_PATHS[state.activeDataflowPath] },
 
-    setActiveDataflowPath(index) {
-      patch({ activeDataflowPath: index })
-    },
-
-    /** Циклически переключает путь: 0 → 1 → 2 → 0 */
-    nextDataflowPath() {
-      const next = ((state.activeDataflowPath + 1) % 3) as DataflowPathIndex
-      patch({ activeDataflowPath: next })
-    },
-
-    setWsStatus(status) {
-      patch({ wsStatus: status })
-    },
-
-    setFilter(q) {
-      patch({ filter: q })
-    },
-
-    setTheme(t) {
-      document.documentElement.setAttribute('data-theme', t)
-      patch({ theme: t })
-    },
-
-    // --------------------------------------------------------------- readers
-
-    getNode(id) {
-      return state.graph.nodes.find(n => n.id === id)
-    },
-
-    getEdgesFor(nodeId) {
-      return state.graph.edges.filter(e => e.from === nodeId || e.to === nodeId)
-    },
-
-    getActivePathName() {
-      return DATAFLOW_PATHS[state.activeDataflowPath]
-    },
-
-    // ------------------------------------------------------------- subscribe
-
-    subscribe(cb) {
-      listeners.add(cb)
-      return () => listeners.delete(cb)
-    },
+    subscribe(cb) { listeners.add(cb); return () => listeners.delete(cb) },
   }
 }
 
-/**
- * Глобальный singleton стора.
- * Импортируется всеми компонентами напрямую.
- */
 export const store = initStore()
