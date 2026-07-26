@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { join } from 'node:path';
 import { glob } from 'glob';
 import type {
   RawParserOutput,
@@ -29,20 +29,39 @@ function extractRoutes(filePath: string, src: string): RawRoute[] {
 
 // ─── HTTP Calls ───────────────────────────────────────────────────────────────
 
-const HTTP_CALL_RE =
-  /(?:httpx|requests)\.(get|post|put|patch|delete)\s*\(\s*["'`]([^"'`]+)["'`]/gi;
+// Pattern 1: httpx.get(...) / requests.post(...) — direct module-level calls
+const HTTP_CALL_DIRECT_RE =
+  /(?:httpx|requests)\.(get|post|put|patch|delete)\s*\(\s*(["'`]?)([^"'`),\n]+)\2/gi;
+
+// Pattern 2: client.get(...) / client.post(...) — httpx.AsyncClient / httpx.Client instance
+// Covers: await client.post(url), await self._client.get(url), response = client.post("url")
+const HTTP_CALL_CLIENT_RE =
+  /(?:self\.)?(?:\w+_)?client\.(get|post|put|patch|delete)\s*\(\s*(["'`f]?)([^"'`),\n]{3,})\2/gi;
 
 function extractHttpCalls(filePath: string, src: string): RawHttpCall[] {
   const calls: RawHttpCall[] = [];
+
+  // Direct calls: httpx.post("https://..."), requests.get(url)
   let match: RegExpExecArray | null;
-  HTTP_CALL_RE.lastIndex = 0;
-  while ((match = HTTP_CALL_RE.exec(src)) !== null) {
-    // regex always captures group 1 — method is always known here
+  HTTP_CALL_DIRECT_RE.lastIndex = 0;
+  while ((match = HTTP_CALL_DIRECT_RE.exec(src)) !== null) {
     const method = match[1]!.toUpperCase() as RawHttpCall['method'];
-    const url = match[2]!;
+    const url = match[3]!.trim();
     const line = src.slice(0, match.index).split('\n').length;
     calls.push({ method, url, file: filePath, line });
   }
+
+  // Client instance calls: await client.post(url, ...), self.client.get("https://...")
+  HTTP_CALL_CLIENT_RE.lastIndex = 0;
+  while ((match = HTTP_CALL_CLIENT_RE.exec(src)) !== null) {
+    const method = match[1]!.toUpperCase() as RawHttpCall['method'];
+    const url = match[3]!.trim();
+    // Skip obvious false positives: very short strings, pure variable names with dots (db.get)
+    if (url.length < 3 || /^\w+\.\w+$/.test(url)) continue;
+    const line = src.slice(0, match.index).split('\n').length;
+    calls.push({ method, url, file: filePath, line });
+  }
+
   return calls;
 }
 
@@ -114,9 +133,7 @@ function parseEnvFile(envPath: string): EnvEntry[] {
   if (!existsSync(envPath)) return [];
   const src = readFileSync(envPath, 'utf-8');
   const entries: EnvEntry[] = [];
-  let lineNum = 0;
   for (const raw of src.split('\n')) {
-    lineNum++;
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
     const eqIdx = line.indexOf('=');
