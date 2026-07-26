@@ -3,6 +3,13 @@
  * Шапка: иконка + имя + стек + N routes · N schemas · N deps
  * Вкладки: Routes / Schemas / Deps
  * Закрытие: кнопка × + Esc
+ *
+ * Публичный API:
+ *   mount(container)  — монтирование
+ *   show(id)          — открыть панель для узла (алиас _openById)
+ *   hide()            — закрыть без emit (алиас _closeOnly)
+ *   close()           — закрыть + emit('node:deselect')
+ *   destroy()         — демонтирование
  */
 import type { ServiceNode } from '../../../../shared/src/graph.js';
 import { emit, on } from '../../lib/eventBus.js';
@@ -15,12 +22,14 @@ import { injectDetailStyles } from './styles.js';
 type Tab = 'routes' | 'schemas' | 'deps';
 
 export const DetailPanel = {
-  _el:        null as HTMLElement | null,
-  _inner:     null as HTMLElement | null,
-  _body:      null as HTMLElement | null,
-  _activeTab: 'routes' as Tab,
-  _node:      null as ServiceNode | null,
+  _el:         null as HTMLElement | null,
+  _inner:      null as HTMLElement | null,
+  _body:       null as HTMLElement | null,
+  _activeTab:  'routes' as Tab,
+  _node:       null as ServiceNode | null,
   _escHandler: null as ((e: KeyboardEvent) => void) | null,
+  /** Защита от рекурсии: close() → emit('node:deselect') → hide() */
+  _closing:    false,
 
   mount(container: HTMLElement): void {
     injectDetailStyles();
@@ -117,23 +126,65 @@ export const DetailPanel = {
     ;(panel as any)._dpRefs = { iconWrap, nameEl, stackEl, statsEl, tabs, body, backdrop };
 
     // --- eventBus
-    on('node:select',   (id) => this._openById(id));
-    on('node:deselect', ()   => this.close());
+    // node:select обрабатывается только через show() из AppShell → нет дублирования
+    on('node:deselect', () => this.hide());
 
     // Esc
     this._escHandler = (e) => { if (e.key === 'Escape') this.close(); };
     document.addEventListener('keydown', this._escHandler);
   },
 
-  // --- открыть по id узла из store ----------------------------------------
+  // ── публичный API ─────────────────────────────────────────────────────────
+
+  /** Открыть панель для узла по id. Алиас для AppShell. */
+  show(nodeId: string): void {
+    this._openById(nodeId);
+  },
+
+  /**
+   * Закрыть панель БЕЗ emit('node:deselect').
+   * Вызывается из AppShell → обработчик node:deselect,
+   * чтобы не создавать петлю событий.
+   */
+  hide(): void {
+    this._closeOnly();
+  },
+
+  /**
+   * Закрыть панель С emit('node:deselect').
+   * Вызывается кнопкой × , Esc, backdrop click — т.е. по инициативе пользователя.
+   * Флаг _closing предотвращает рекурсию:
+   *   close() → emit('node:deselect') → AppShell → hide() → _closeOnly()
+   */
+  close(): void {
+    if (this._closing) return;
+    this._closing = true;
+    this._closeOnly();
+    emit('node:deselect', undefined);
+    this._closing = false;
+  },
+
+  // ── приватное ядро ────────────────────────────────────────────────────────
+
   _openById(nodeId: string): void {
     const graph = store.graph;
     const node  = graph?.nodes.find(n => n.id === nodeId) ?? null;
-    if (!node) { this.close(); return; }
+    if (!node) { this._closeOnly(); return; }
     this._node = node;
     this._activeTab = 'routes';
     this._render();
     this._open();
+  },
+
+  /** Только скрыть DOM, без emit. */
+  _closeOnly(): void {
+    const el = this._el;
+    if (!el) return;
+    const refs = (el as any)._dpRefs as { backdrop: HTMLElement } | undefined;
+    el.classList.remove('detail-panel--open');
+    el.setAttribute('aria-hidden', 'true');
+    refs?.backdrop.classList.remove('dp-backdrop--visible');
+    this._node = null;
   },
 
   _render(): void {
@@ -165,7 +216,8 @@ export const DetailPanel = {
       <span class="dp-dot"></span>
       <span class="dp-stat"><b>${node.dependencies.length}</b> deps</span>
     `;
-    // обновить badge цифр на вкладках
+
+    // badge цифр на вкладках
     refs.tabs.querySelectorAll('.dp-tab-btn').forEach(btn => {
       const t = (btn as HTMLElement).dataset['tab'] as Tab;
       const counts: Record<Tab, number> = {
@@ -194,9 +246,9 @@ export const DetailPanel = {
     panel.id = `dp-panel-${this._activeTab}`;
 
     switch (this._activeTab) {
-      case 'routes':  RouteList.render(panel, node.routes);                       break;
-      case 'schemas': SchemaBlock.render(panel, node.schemas);                    break;
-      case 'deps':    DepList.render(panel, node.dependencies, store.graph);      break;
+      case 'routes':  RouteList.render(panel, node.routes);                  break;
+      case 'schemas': SchemaBlock.render(panel, node.schemas);               break;
+      case 'deps':    DepList.render(panel, node.dependencies, store.graph); break;
     }
 
     body.appendChild(panel);
@@ -214,7 +266,6 @@ export const DetailPanel = {
     this._renderBody();
   },
 
-  // --- open / close ---------------------------------------------------------
   _open(): void {
     const el = this._el;
     if (!el) return;
@@ -222,19 +273,7 @@ export const DetailPanel = {
     el.setAttribute('aria-hidden', 'false');
     el.classList.add('detail-panel--open');
     refs?.backdrop.classList.add('dp-backdrop--visible');
-    // фокус на панель
     requestAnimationFrame(() => (el.querySelector('.dp-close') as HTMLElement)?.focus());
-  },
-
-  close(): void {
-    const el = this._el;
-    if (!el) return;
-    const refs = (el as any)._dpRefs as { backdrop: HTMLElement };
-    el.classList.remove('detail-panel--open');
-    el.setAttribute('aria-hidden', 'true');
-    refs?.backdrop.classList.remove('dp-backdrop--visible');
-    this._node = null;
-    emit('node:deselect', undefined);
   },
 
   destroy(): void {

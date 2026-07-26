@@ -1,3 +1,13 @@
+/**
+ * DetailPanel — скомпилированная JS-версия (синхронизировано с index.ts).
+ *
+ * Публичный API:
+ *   mount(container)  — монтирование
+ *   show(id)          — открыть панель для узла
+ *   hide()            — закрыть без emit
+ *   close()           — закрыть + emit('node:deselect')
+ *   destroy()         — демонтирование
+ */
 import { emit, on } from '../../lib/eventBus.js';
 import { store } from '../../store.js';
 import { RouteList } from './RouteList.js';
@@ -11,15 +21,15 @@ export const DetailPanel = {
     _activeTab: 'routes',
     _node: null,
     _escHandler: null,
+    /** Защита от рекурсии: close() → emit('node:deselect') → hide() */
+    _closing: false,
     mount(container) {
         injectDetailStyles();
-        // Обёртка (backdrop click)
         const backdrop = document.createElement('div');
         backdrop.className = 'dp-backdrop';
         backdrop.setAttribute('aria-hidden', 'true');
         backdrop.addEventListener('click', () => this.close());
         container.appendChild(backdrop);
-        // Панель
         const panel = document.createElement('aside');
         panel.className = 'detail-panel';
         panel.setAttribute('role', 'complementary');
@@ -27,7 +37,6 @@ export const DetailPanel = {
         panel.setAttribute('aria-hidden', 'true');
         container.appendChild(panel);
         this._el = panel;
-        // --- шапка
         const header = document.createElement('div');
         header.className = 'dp-header';
         panel.appendChild(header);
@@ -50,7 +59,6 @@ export const DetailPanel = {
         const statsEl = document.createElement('div');
         statsEl.className = 'dp-stats';
         header.appendChild(statsEl);
-        // кнопка ×
         const closeBtn = document.createElement('button');
         closeBtn.className = 'dp-close';
         closeBtn.setAttribute('aria-label', 'Закрыть');
@@ -59,7 +67,6 @@ export const DetailPanel = {
       <path d="M18 6 6 18M6 6l12 12"/></svg>`;
         closeBtn.addEventListener('click', () => this.close());
         panel.appendChild(closeBtn);
-        // --- вкладки
         const tabs = document.createElement('div');
         tabs.className = 'dp-tabs';
         tabs.setAttribute('role', 'tablist');
@@ -80,52 +87,62 @@ export const DetailPanel = {
             btn.addEventListener('click', () => this._switchTab(id));
             tabs.appendChild(btn);
         });
-        // --- тело
         const body = document.createElement('div');
         body.className = 'dp-body';
         panel.appendChild(body);
         this._body = body;
         this._inner = panel;
-        // сохраняем ссылки для update
         ;
         panel._dpRefs = { iconWrap, nameEl, stackEl, statsEl, tabs, body, backdrop };
-        // --- eventBus
-        on('node:select', (id) => this._openById(id));
-        on('node:deselect', () => this.close());
-        // Esc
-        this._escHandler = (e) => { if (e.key === 'Escape')
-            this.close(); };
+        // node:deselect → hide() (без emit, без рекурсии)
+        on('node:deselect', () => this.hide());
+        this._escHandler = (e) => { if (e.key === 'Escape') this.close(); };
         document.addEventListener('keydown', this._escHandler);
     },
-    // --- открыть по id узла из store ----------------------------------------
+    // ── публичный API ──────────────────────────────────────────────────────────
+    show(nodeId) {
+        this._openById(nodeId);
+    },
+    hide() {
+        this._closeOnly();
+    },
+    close() {
+        if (this._closing) return;
+        this._closing = true;
+        this._closeOnly();
+        emit('node:deselect', undefined);
+        this._closing = false;
+    },
+    // ── приватное ядро ────────────────────────────────────────────────────────
     _openById(nodeId) {
         const graph = store.graph;
         const node = graph?.nodes.find(n => n.id === nodeId) ?? null;
-        if (!node) {
-            this.close();
-            return;
-        }
+        if (!node) { this._closeOnly(); return; }
         this._node = node;
         this._activeTab = 'routes';
         this._render();
         this._open();
     },
+    _closeOnly() {
+        const el = this._el;
+        if (!el) return;
+        const refs = el._dpRefs;
+        el.classList.remove('detail-panel--open');
+        el.setAttribute('aria-hidden', 'true');
+        refs?.backdrop.classList.remove('dp-backdrop--visible');
+        this._node = null;
+    },
     _render() {
         const node = this._node;
-        if (!node || !this._inner)
-            return;
+        if (!node || !this._inner) return;
         const refs = this._inner._dpRefs;
-        // иконка (Simple Icons CDN)
         refs.iconWrap.innerHTML = '';
         const techIcon = _techIcon(node.framework, node.language);
         refs.iconWrap.appendChild(techIcon);
-        // имя
         refs.nameEl.textContent = node.name;
-        // стек
         refs.stackEl.innerHTML = '';
         const chips = _stackChips(node);
         chips.forEach(c => refs.stackEl.appendChild(c));
-        // статистика
         refs.statsEl.innerHTML = `
       <span class="dp-stat"><b>${node.routes.length}</b> routes</span>
       <span class="dp-dot"></span>
@@ -133,7 +150,6 @@ export const DetailPanel = {
       <span class="dp-dot"></span>
       <span class="dp-stat"><b>${node.dependencies.length}</b> deps</span>
     `;
-        // обновить badge цифр на вкладках
         refs.tabs.querySelectorAll('.dp-tab-btn').forEach(btn => {
             const t = btn.dataset['tab'];
             const counts = {
@@ -150,29 +166,21 @@ export const DetailPanel = {
     _renderBody() {
         const body = this._body;
         const node = this._node;
-        if (!body || !node)
-            return;
+        if (!body || !node) return;
         body.innerHTML = '';
         const panel = document.createElement('div');
         panel.setAttribute('role', 'tabpanel');
         panel.id = `dp-panel-${this._activeTab}`;
         switch (this._activeTab) {
-            case 'routes':
-                RouteList.render(panel, node.routes);
-                break;
-            case 'schemas':
-                SchemaBlock.render(panel, node.schemas);
-                break;
-            case 'deps':
-                DepList.render(panel, node.dependencies, store.graph);
-                break;
+            case 'routes': RouteList.render(panel, node.routes); break;
+            case 'schemas': SchemaBlock.render(panel, node.schemas); break;
+            case 'deps': DepList.render(panel, node.dependencies, store.graph); break;
         }
         body.appendChild(panel);
     },
     _switchTab(tab) {
         this._activeTab = tab;
-        if (!this._inner)
-            return;
+        if (!this._inner) return;
         const refs = this._inner._dpRefs;
         refs.tabs.querySelectorAll('.dp-tab-btn').forEach(btn => {
             const t = btn.dataset['tab'];
@@ -181,36 +189,20 @@ export const DetailPanel = {
         });
         this._renderBody();
     },
-    // --- open / close ---------------------------------------------------------
     _open() {
         const el = this._el;
-        if (!el)
-            return;
+        if (!el) return;
         const refs = el._dpRefs;
         el.setAttribute('aria-hidden', 'false');
         el.classList.add('detail-panel--open');
         refs?.backdrop.classList.add('dp-backdrop--visible');
-        // фокус на панель
         requestAnimationFrame(() => el.querySelector('.dp-close')?.focus());
     },
-    close() {
-        const el = this._el;
-        if (!el)
-            return;
-        const refs = el._dpRefs;
-        el.classList.remove('detail-panel--open');
-        el.setAttribute('aria-hidden', 'true');
-        refs?.backdrop.classList.remove('dp-backdrop--visible');
-        this._node = null;
-        emit('node:deselect', undefined);
-    },
     destroy() {
-        if (this._escHandler)
-            document.removeEventListener('keydown', this._escHandler);
+        if (this._escHandler) document.removeEventListener('keydown', this._escHandler);
         this._el?.remove();
     },
 };
-// ─── helpers ─────────────────────────────────────────────────────────────────
 function _techIcon(framework, language) {
     const ICON_MAP = {
         fastapi: 'fastapi', express: 'express', fastify: 'fastify',
@@ -231,15 +223,12 @@ function _stackChips(node) {
     const add = (label, color) => {
         const c = document.createElement('span');
         c.className = 'dp-chip';
-        if (color)
-            c.style.setProperty('--chip-color', color);
+        if (color) c.style.setProperty('--chip-color', color);
         c.textContent = label;
         chips.push(c);
     };
-    if (node.framework !== 'unknown')
-        add(node.framework);
-    if (node.language !== 'unknown')
-        add(node.language);
+    if (node.framework !== 'unknown') add(node.framework);
+    if (node.language !== 'unknown') add(node.language);
     const ntype = node.nodeType;
     add(ntype, ntype === 'service' ? 'var(--color-primary)' : ntype === 'infrastructure' ? 'var(--color-gold)' : 'var(--color-text-muted)');
     return chips;
