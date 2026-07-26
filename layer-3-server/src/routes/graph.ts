@@ -19,51 +19,55 @@ export function registerGraphRoutes(app: FastifyInstance): void {
 
   /**
    * POST /graph/rebuild
-   * Body: { projectPath: string }
-   * Rebuilds the graph from scratch and broadcasts the diff via WebSocket.
+   * Body: { projectPath: string } | { projectPaths: string[] }
+   * Rebuilds the graph and broadcasts the diff via WebSocket.
    */
-  app.post<{ Body: { projectPath: string } }>('/graph/rebuild', async (req, reply) => {
-    const { projectPath } = req.body
+  app.post<{ Body: { projectPath?: string; projectPaths?: string[] } }>(
+    '/graph/rebuild',
+    async (req, reply) => {
+      const { projectPath, projectPaths } = req.body
 
-    if (!projectPath || typeof projectPath !== 'string') {
-      return reply.code(400).send({ error: 'projectPath is required' })
-    }
-
-    try {
-      const diff = await store.rebuild(projectPath)
-      const model = store.get()!
-
-      // Broadcast to WebSocket clients
-      if (diff === null) {
-        // First build — send full graph
-        const event: WsEvent = { type: 'graph:full', data: model }
-        broadcast(event)
-      } else {
-        // Incremental update
-        const event: WsEvent = { type: 'graph:update', diff, changedAt: Date.now() }
-        broadcast(event)
+      const paths: string[] = []
+      if (projectPaths && projectPaths.length > 0) {
+        paths.push(...projectPaths)
+      } else if (projectPath) {
+        paths.push(projectPath)
       }
 
-      return reply.send({
-        ok: true,
-        nodesCount: model.nodes.length,
-        edgesCount: model.edges.length,
-        updatedAt: model.updatedAt,
-      })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      if (paths.length === 0) {
+        return reply.code(400).send({ error: 'projectPath or projectPaths is required' })
+      }
 
-      // Broadcast error to WS clients
-      const event: WsEvent = { type: 'graph:error', message }
-      broadcast(event)
+      try {
+        const diff = await store.rebuild(paths)
+        const model = store.get()!
 
-      return reply.code(500).send({ error: message })
-    }
-  })
+        // Broadcast to WebSocket clients
+        if (diff === null) {
+          const event: WsEvent = { type: 'graph:full', data: model }
+          broadcast(event)
+        } else {
+          const event: WsEvent = { type: 'graph:update', diff, changedAt: Date.now() }
+          broadcast(event)
+        }
+
+        return reply.send({
+          ok: true,
+          nodesCount: model.nodes.length,
+          edgesCount: model.edges.length,
+          updatedAt: model.updatedAt,
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        const event: WsEvent = { type: 'graph:error', message }
+        broadcast(event)
+        return reply.code(500).send({ error: message })
+      }
+    },
+  )
 
   /**
    * GET /health
-   * Healthcheck endpoint.
    */
   app.get('/health', async (_req, reply) => {
     const model = store.get()

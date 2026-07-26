@@ -25,12 +25,14 @@ class GraphStore {
   }
 
   /**
-   * Run Layer 1 (parser) + Layer 2 (graph builder) for the given project path.
+   * Run Layer 1 (parser) + Layer 2 (graph builder) for one or multiple project paths.
+   * Accepts a single path string or an array of paths.
    * Updates the store and returns the diff (null on first build).
    */
-  async rebuild(projectPath: string): Promise<GraphDiff | null> {
-    const outputs = await parseProject(projectPath)
-    const next = buildGraph(outputs)
+  async rebuild(projectPaths: string | string[]): Promise<GraphDiff | null> {
+    const paths = Array.isArray(projectPaths) ? projectPaths : [projectPaths]
+    const allOutputs = (await Promise.all(paths.map((p) => parseProject(p)))).flat()
+    const next = buildGraph(allOutputs)
     return this.set(next)
   }
 }
