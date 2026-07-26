@@ -13,8 +13,8 @@
 
 /* ------------------------------------------------------------------ Type */
 :root {
-  --font-body: 'Satoshi', 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-body:    'Satoshi', 'Inter', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
 
   --text-xs:   clamp(0.75rem,  0.7rem  + 0.25vw, 0.875rem);
   --text-sm:   clamp(0.875rem, 0.8rem  + 0.35vw, 1rem);
@@ -101,6 +101,20 @@
   --shadow-md:   0 4px 12px oklch(0.2 0.01 80 / 0.08), 0 1px 3px oklch(0.2 0.01 80 / 0.06);
   --shadow-lg:   0 12px 32px oklch(0.2 0.01 80 / 0.14), 0 4px 12px oklch(0.2 0.01 80 / 0.06);
   --shadow-glow: 0 0 0 2px var(--primary-hl);
+
+  /* ---- Dot-grid (canvas background pattern) ---- */
+  --dot-color:   rgba(40, 37, 29, 0.18);  /* точка на светлом фоне */
+  --dot-size:    1.5px;                   /* радиус/диаметр точки */
+  --dot-spacing: 24px;                    /* шаг сетки */
+
+  /* ---- Glassmorphism (панели поверх графа) ---- */
+  --glass-bg:     rgba(248, 247, 244, 0.72);  /* frosted surface */
+  --glass-border: rgba(40, 37, 29, 0.10);     /* тонкая граница */
+  --glass-shadow: 0 8px 32px oklch(0.2 0.01 80 / 0.12),
+                  0 2px 8px  oklch(0.2 0.01 80 / 0.06),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.60); /* top-glare */
+  --glass-blur:   12px;
+  --glass-saturate: 1.6;
 }
 
 /* ============================================================= DARK THEME */
@@ -147,6 +161,20 @@
   --shadow-md:   0 4px 12px oklch(0 0 0 / 0.40), 0 1px 3px oklch(0 0 0 / 0.20);
   --shadow-lg:   0 16px 48px oklch(0 0 0 / 0.60), 0 4px 16px oklch(0 0 0 / 0.30);
   --shadow-glow: 0 0 0 2px var(--primary-hl), 0 0 16px oklch(from var(--primary) l c h / 0.15);
+
+  /* ---- Dot-grid (canvas background pattern) ---- */
+  --dot-color:   rgba(255, 255, 255, 0.12); /* точка на тёмном фоне */
+  --dot-size:    1.5px;
+  --dot-spacing: 24px;
+
+  /* ---- Glassmorphism ---- */
+  --glass-bg:     rgba(22, 21, 19, 0.70);     /* тёмный frosted */
+  --glass-border: rgba(255, 255, 255, 0.08);  /* едва заметная граница */
+  --glass-shadow: 0 8px 32px oklch(0 0 0 / 0.50),
+                  0 2px 8px  oklch(0 0 0 / 0.30),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.06); /* top-glare */
+  --glass-blur:   12px;
+  --glass-saturate: 1.4;
 }
 
 /* --------------------------------------------------------- System fallback */
@@ -183,5 +211,17 @@
     --shadow-md:   0 4px 12px oklch(0 0 0 / 0.40), 0 1px 3px oklch(0 0 0 / 0.20);
     --shadow-lg:   0 16px 48px oklch(0 0 0 / 0.60), 0 4px 16px oklch(0 0 0 / 0.30);
     --shadow-glow: 0 0 0 2px var(--primary-hl), 0 0 16px oklch(from var(--primary) l c h / 0.15);
+    /* Dot-grid */
+    --dot-color:   rgba(255, 255, 255, 0.12);
+    --dot-size:    1.5px;
+    --dot-spacing: 24px;
+    /* Glassmorphism */
+    --glass-bg:     rgba(22, 21, 19, 0.70);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-shadow: 0 8px 32px oklch(0 0 0 / 0.50),
+                    0 2px 8px  oklch(0 0 0 / 0.30),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    --glass-blur:   12px;
+    --glass-saturate: 1.4;
   }
 }
