@@ -4,11 +4,6 @@ import { store } from '../store.js'
 import { broadcast } from '../ws/handler.js'
 
 export function registerGraphRoutes(app: FastifyInstance): void {
-  /**
-   * GET /graph
-   * Returns the current GraphModel as JSON.
-   * 503 if the graph hasn't been built yet.
-   */
   app.get('/graph', async (_req, reply) => {
     const model = store.get()
     if (model === null) {
@@ -17,11 +12,6 @@ export function registerGraphRoutes(app: FastifyInstance): void {
     return reply.send(model)
   })
 
-  /**
-   * POST /graph/rebuild
-   * Body: { projectPath: string } | { projectPaths: string[] }
-   * Rebuilds the graph and broadcasts the diff via WebSocket.
-   */
   app.post<{ Body: { projectPath?: string; projectPaths?: string[] } }>(
     '/graph/rebuild',
     async (req, reply) => {
@@ -38,11 +28,17 @@ export function registerGraphRoutes(app: FastifyInstance): void {
         return reply.code(400).send({ error: 'projectPath or projectPaths is required' })
       }
 
+      // Debug: print received paths and hex of first path
+      console.log('[rebuild] received paths:', JSON.stringify(paths))
+      if (paths[0]) {
+        const hex = Buffer.from(paths[0], 'utf8').toString('hex')
+        console.log('[rebuild] path[0] hex:', hex)
+      }
+
       try {
         const diff = await store.rebuild(paths)
         const model = store.get()!
 
-        // Broadcast to WebSocket clients
         if (diff === null) {
           const event: WsEvent = { type: 'graph:full', data: model }
           broadcast(event)
@@ -66,9 +62,6 @@ export function registerGraphRoutes(app: FastifyInstance): void {
     },
   )
 
-  /**
-   * GET /health
-   */
   app.get('/health', async (_req, reply) => {
     const model = store.get()
     return reply.send({
