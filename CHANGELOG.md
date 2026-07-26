@@ -6,6 +6,35 @@
 
 ---
 
+## [2026-07-26] — Реализация Layer 2: Graph Builder
+
+Ссылка на Roadmap: [Issue #3](https://github.com/IceGudvin/smart-project-map/issues/3)
+
+### Добавлено
+- **`layer-2-graph/package.json`** — пакет `@smart-map/layer-2-graph` с зависимостью на `@smart-map/shared`
+- **`layer-2-graph/tsconfig.json`** + **`layer-2-graph/tsup.config.ts`** — конфигурация сборки
+- **`layer-2-graph/src/resolver.ts`**:
+  - `deriveServiceId(servicePath)` — стабильный ID из пути (basename)
+  - `resolveServiceId(url, nodes, allOutputs)` — маппинг URL → ServiceNode.id по hostname / порту, внешние → `external`
+  - `buildServiceNode(output)` — `RawParserOutput` → `ServiceNode` с конвертацией routes, schemas
+- **`layer-2-graph/src/infrastructure.ts`**:
+  - `detectInfraNodes(allEnvConfigs)` — сканирует `.env` по паттернам: PostgreSQL, Redis, MinIO/S3, MongoDB, RabbitMQ
+  - Возвращает `ServiceNode[]` с `nodeType: 'infrastructure'`
+- **`layer-2-graph/src/edges.ts`**:
+  - `buildHttpEdges(outputs, nodes)` — HTTP-вызовы → `Edge[]`, нерезолвленные → `external`
+  - `buildRedisEdges(outputs, nodes)` — publish/consume по очереди → Edge между сервисами; без consumer → Edge к Redis-узлу
+- **`layer-2-graph/src/index.ts`**:
+  - `buildGraph(outputs: RawParserOutput[]): GraphModel` — главная функция (5 шагов: nodes → infra → external → redis edges → dependencies)
+  - `buildGraphDiff(prev, next): GraphDiff` — инкрементальный diff для WebSocket
+
+### Зафиксировано в репо
+- feat: implement layer-2-graph: [`0c4b724`](https://github.com/IceGudvin/smart-project-map/commit/0c4b724569e5f271990be347ad52a5ca619630d0)
+
+### В следующей сессии
+- **Layer 3: Fastify Server + WebSocket** — принимает `GraphModel` от Layer 2, REST API + WebSocket, подключение к Layer 0 (file watcher) для инкрементальных обновлений
+
+---
+
 ## [2026-07-26] — Довыливка и закрытие Layer 1: Redis-экстрактор + фикс типов
 
 Ссылка на Roadmap: [Issue #2](https://github.com/IceGudvin/smart-project-map/issues/2)
