@@ -10,6 +10,54 @@ Smart Project Map решает конкретную проблему: при р�
 
 ---
 
+## Референсный проект: Leadway
+
+Leadway — основной тест-кейс для разработки и проверки всех слоёв Smart Project Map. Это реальный production-проект с монорепозиторием, состоящий из двух сервисов.
+
+### Стек Leadway
+
+| Часть | Технологии |
+|---|---|
+| **Backend** | Python 3.11, FastAPI 0.111, Uvicorn, SQLAlchemy 2.0, Alembic |
+| **База данных** | PostgreSQL (asyncpg + psycopg2-binary) |
+| **Кэш / очереди** | Redis (aioredis 2.0) |
+| **Аутентификация** | PyJWT, passlib/bcrypt |
+| **Файловое хранилище** | MinIO (S3-совместимое), boto3 |
+| **Фоновые задачи** | APScheduler |
+| **Frontend** | Next.js (App Router), TypeScript, Tailwind CSS |
+| **Стейт** | Zustand |
+| **Инфраструктура** | Docker, docker-compose |
+
+### Структура backend (FastAPI)
+
+```
+backend/app/
+├── main.py           ← FastAPI app, регистрация роутеров
+├── config.py         ← pydantic-settings конфигурация
+├── database.py       ← SQLAlchemy async engine
+├── routers/          ← @router.post("/auth/login") и т.д.
+├── services/         ← бизнес-логика
+├── models/           ← SQLAlchemy ORM модели
+├── schemas/          ← Pydantic v2 схемы (входные/выходные)
+├── core/             ← security, dependencies
+└── integrations/     ← внешние сервисы (MinIO, внешние API)
+```
+
+### Пример data-flow в Leadway (цель для Layer 5)
+
+```
+POST /auth/login
+  INPUT:  LoginRequest { email: str, password: str }   ← schemas/auth.py
+       ↓  routers/auth.py → services/auth_service.py
+  CHECK:  models/user.py (PostgreSQL) — bcrypt verify
+  OUTPUT: TokenResponse { access_token: str, token_type: str }
+       ↓  JWT payload { userId: UUID, roles: list[str], exp: int }
+       ↓  Redis — сессия/токен кэш
+       ↓  frontend middleware.ts — Bearer header → все последующие запросы
+```
+
+---
+
 ## Архитектура: 6 слоёв + shared
 
 ```
@@ -109,7 +157,7 @@ Runtime-подход требует запущенного приложения 
 **routes.ts** — находит объявления HTTP-роутов:
 - Express/Fastify: `app.get('/path', handler)`
 - NestJS: `@Get('/path')` декораторы
-- FastAPI: `@app.get('/path')`
+- FastAPI: `@router.post('/auth/login')` декораторы
 - Gin: `router.GET("/path", handler)`
 - Результат: `{ method: 'GET', path: '/users/:id', handler: 'getUser', file, line }`
 
@@ -121,13 +169,60 @@ Runtime-подход требует запущенного приложения 
 **schemas.ts** — извлекает схемы данных:
 - TypeScript DTO-классы и интерфейсы
 - Zod-схемы: `z.object({ email: z.string(), password: z.string() })`
-- Pydantic-модели (Python)
+- **Pydantic v2-модели (Python)** — основной формат для Leadway
 - OpenAPI/Swagger если есть файл спецификации
 - Результат: `{ name, fields: [{ name, type, required }] }`
 
 **env-config.ts** — читает `.env` и конфиг-файлы:
 - `AUTH_SERVICE_URL=http://auth:3001` → знаем, что `auth` — это отдельный сервис
+- Для Leadway: `DATABASE_URL`, `REDIS_URL`, `MINIO_ENDPOINT` из `backend/.env`
 - Результат: `{ key, value, resolvedService? }`
+
+### Python / FastAPI парсер (Leadway-специфика)
+
+Python-парсер реализован через `ast-grep` с Python grammar и работает по следующим паттернам:
+
+**Поиск роутов FastAPI:**
+```python
+# Паттерны для ast-grep
+@router.post("$PATH")        # → method: POST, path: $PATH
+@router.get("$PATH")         # → method: GET, path: $PATH
+@app.post("$PATH")           # → аналогично для прямой регистрации на app
+```
+
+**Извлечение Pydantic v2 схем из `schemas/`:**
+```python
+# Исходный код Leadway
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+# Результат парсера:
+# { name: "LoginRequest", fields: [
+#     { name: "email", type: "EmailStr", required: true },
+#     { name: "password", type: "str", required: true }
+#   ]
+# }
+```
+
+**Связывание роута со схемой:**
+```python
+@router.post("/login", response_model=TokenResponse)
+async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
+    ...
+# Парсер извлекает: inputSchema → LoginRequest, outputSchema → TokenResponse
+```
+
+**Распознавание внешних зависимостей из `backend/.env`:**
+```
+DATABASE_URL=postgresql+asyncpg://user:pass@db:5432/leadway   → ServiceNode "PostgreSQL"
+REDIS_URL=redis://redis:6379/0                                 → ServiceNode "Redis"
+MINIO_ENDPOINT=minio:9000                                      → ServiceNode "MinIO"
+```
 
 ### Инструменты по задачам
 
@@ -137,7 +232,8 @@ Runtime-подход требует запущенного приложения 
 | Универсальный парсинг | `tree-sitter` + WASM | Go, Python, Ruby и др. |
 | Паттерн-поиск по AST | `ast-grep` | Быстро найти паттерн без написания парсера |
 | Готовая спецификация | `@apidevtools/swagger-parser` | Если есть OpenAPI YAML/JSON |
-| Python | `libcst` | Сохраняет форматирование, полный AST |
+| Python | `ast-grep` (Python grammar) | Основной для FastAPI/Pydantic |
+| Python (сложный анализ) | `libcst` | Сохраняет форматирование, полный AST |
 
 ### Файловая структура
 
@@ -146,7 +242,7 @@ layer-1-parser/
 ├── index.ts
 ├── languages/
 │   ├── typescript.ts   ← ts-morph + tree-sitter
-│   ├── python.ts       ← ast-grep / libcst
+│   ├── python.ts       ← ast-grep (FastAPI, Pydantic v2)
 │   └── go.ts           ← tree-sitter WASM
 ├── extractors/
 │   ├── routes.ts
@@ -161,6 +257,8 @@ layer-1-parser/
 ```typescript
 type RawParserOutput = {
   servicePath: string
+  language: 'typescript' | 'python' | 'go' | 'unknown'
+  framework: 'fastapi' | 'express' | 'fastify' | 'nestjs' | 'gin' | 'unknown'
   routes: RawRoute[]
   httpCalls: RawHttpCall[]
   schemas: RawSchema[]
@@ -184,6 +282,11 @@ type RawParserOutput = {
 2. Сопоставляет hostname/port с каталогами сервисов
 3. Разрешает переменные окружения в URL-строках
 
+Для Leadway Resolver также распознаёт **инфраструктурные сервисы** (не только сервисы приложения):
+- `db:5432` → узел `PostgreSQL` (тип: `infrastructure`)
+- `redis:6379` → узел `Redis` (тип: `infrastructure`)
+- `minio:9000` → узел `MinIO` (тип: `infrastructure`)
+
 ### Data Flow построение
 
 На основе схем строится предварительная карта трансформации данных:
@@ -200,7 +303,7 @@ type RawParserOutput = {
 ```
 layer-2-graph/
 ├── builder.ts        ← RawParserOutput[] → GraphModel
-├── resolver.ts       ← URL → ServiceNode
+├── resolver.ts       ← URL → ServiceNode (включая infrastructure nodes)
 ├── data-flow.ts      ← строит DataFlow цепочки
 ├── cache.ts          ← инвалидация по файлу
 └── types.ts
@@ -213,6 +316,9 @@ type ServiceNode = {
   id: string
   name: string
   path: string
+  language: 'typescript' | 'python' | 'go' | 'unknown'
+  framework: 'fastapi' | 'express' | 'fastify' | 'nestjs' | 'nextjs' | 'gin' | 'unknown'
+  nodeType: 'service' | 'infrastructure' | 'external'  // новое поле
   routes: Route[]
   dependencies: string[]   // id других сервисов
   schemas: Schema[]
@@ -299,17 +405,24 @@ layer-3-server/
 
 Dagre (направленный граф сверху вниз) — оптимален для сервисной архитектуры с иерархией:
 ```
-frontend → api-gateway → auth-service
-                       → user-service → database
-                       → order-service → database
+frontend (Next.js) → FastAPI backend → PostgreSQL
+                                     → Redis
+                                     → MinIO
 ```
 
 Force-directed лейаут хуже подходит для сервисов — там нет физического смысла в «притяжении».
 
+### Визуальное различие типов узлов
+
+Узлы `nodeType: 'infrastructure'` (PostgreSQL, Redis, MinIO) отображаются иначе, чем `'service'`:
+- **service** — прямоугольник с именем, языком/фреймворком, количеством роутов
+- **infrastructure** — цилиндр (БД) или шестиугольник (кэш/хранилище) с именем и технологией
+- **external** — пунктирная граница, курсив
+
 ### Компоненты
 
 - **Graph.tsx** — основной канвас, подписывается на WebSocket, перерисовывает граф при обновлении
-- **NodeCard.tsx** — popup при клике на узел: имя сервиса, список роутов, входящие и исходящие вызовы, схемы данных
+- **NodeCard.tsx** — popup при клике на узел: имя сервиса, фреймворк, список роутов, входящие и исходящие вызовы, схемы данных
 - **EdgeTooltip.tsx** — tooltip при hover на стрелке: метод, путь, inputPayload → outputPayload
 - **Sidebar.tsx** — список всех сервисов с поиском, фильтрация по слою/технологии
 
@@ -339,22 +452,18 @@ layer-4-ui/
 
 Killer feature проекта. Берёт конкретный маршрут (например `POST /auth/login`) и строит полную цепочку: что пришло на вход, как трансформировалось, что передаётся дальше в каждый последующий сервис. Результат — подсветка выбранного пути на графе с визуализацией изменений payload на каждом шаге.
 
-### Пример
+### Пример для Leadway
 
 ```
 POST /auth/login
-  INPUT:  { email: string, password: string }
-       ↓
-  AuthService.validateCredentials()
-  OUTPUT: JWT { userId: string, roles: string[], exp: number }
-       ↓
-  UserService.getProfile()
-  INPUT:  { userId: string }        ← берётся из JWT
-  OUTPUT: { id, name, email, avatar }
-       ↓
-  OrderService.getUserOrders()
-  INPUT:  { userId: string, roles: string[] }   ← из JWT
-  OUTPUT: { orders: Order[] }
+  INPUT:  LoginRequest { email: EmailStr, password: str }
+       ↓  routers/auth.py → services/auth_service.py
+  CHECK:  PostgreSQL → models/user.py (bcrypt.verify)
+  OUTPUT: TokenResponse { access_token: str, token_type: "bearer" }
+       ↓  JWT payload { userId: UUID, roles: list[str], exp: int }
+       ↓  Redis → кэш токена (TTL из settings.ACCESS_TOKEN_EXPIRE)
+       ↓  frontend middleware.ts → Authorization: Bearer header
+              → все последующие запросы к FastAPI
 ```
 
 ### Два подхода к реализации
@@ -391,6 +500,8 @@ type ServiceNode = {
   name: string
   path: string
   language: 'typescript' | 'python' | 'go' | 'unknown'
+  framework: 'fastapi' | 'express' | 'fastify' | 'nestjs' | 'nextjs' | 'gin' | 'unknown'
+  nodeType: 'service' | 'infrastructure' | 'external'
   routes: Route[]
   dependencies: string[]
   schemas: Schema[]
@@ -432,11 +543,11 @@ type GraphDiff = {
 
 | Этап | Что реализуется | Ценность |
 |---|---|---|
-| **MVP** | Layer 0 (CLI) + Layer 1 (TS parser) + Layer 2 + Cytoscape граф | Видны связи между сервисами |
+| **MVP** | Layer 0 (CLI) + Layer 1 (TS + Python/FastAPI parser) + Layer 2 + Cytoscape граф | Видны связи между сервисами |
 | **v0.2** | Schemas extractor + EdgeTooltip с payload | Видно что передаётся |
 | **v0.3** | File watcher + WebSocket live updates | Реальное время |
 | **v0.4** | DataFlow tracer + подсветка пути | Killer feature |
-| **v1.0** | VS Code Extension, Python + Go парсеры | Широкая аудитория |
+| **v1.0** | VS Code Extension, Go парсер | Широкая аудитория |
 
 ---
 
@@ -445,7 +556,7 @@ type GraphDiff = {
 | Слой | Технологии |
 |---|---|
 | Layer 0 | Node.js, commander, chokidar, open, chalk |
-| Layer 1 | ts-morph, tree-sitter (WASM), ast-grep |
+| Layer 1 | ts-morph, tree-sitter (WASM), ast-grep (Python grammar) |
 | Layer 2 | TypeScript, in-memory / better-sqlite3 |
 | Layer 3 | Fastify, ws / SSE |
 | Layer 4 | React, Cytoscape.js, dagre, Zustand |
