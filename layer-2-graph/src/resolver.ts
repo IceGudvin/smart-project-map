@@ -1,13 +1,15 @@
-import type { RawParserOutput, RawRoute, RawSchema, EnvEntry } from '@smart-map/shared'
-import type { ServiceNode, Schema, Route, NodeType, Language, Framework } from '@smart-map/shared'
-import path from 'node:path'
+import type { RawParserOutput, RawRoute, RawSchema } from '@smart-map/shared'
+import type { ServiceNode, Schema, Route, NodeType } from '@smart-map/shared'
 
 /**
  * Derives a stable service ID from the service root path.
  * e.g. "/projects/leadway/backend" → "backend"
  */
 export function deriveServiceId(servicePath: string): string {
-  return path.basename(servicePath).toLowerCase().replace(/[^a-z0-9_-]/g, '-')
+  // Works on both POSIX and Windows paths
+  const normalized = servicePath.replace(/\\/g, '/')
+  const base = normalized.split('/').filter(Boolean).pop() ?? 'unknown'
+  return base.toLowerCase().replace(/[^a-z0-9_-]/g, '-')
 }
 
 /**
@@ -18,12 +20,12 @@ export function deriveServiceId(servicePath: string): string {
  *   3. External URL → returns 'external'
  */
 export function resolveServiceId(
-  url: string,
+  rawUrl: string,
   nodes: ServiceNode[],
   allOutputs: RawParserOutput[],
 ): string {
   try {
-    const parsed = new URL(url)
+    const parsed = new URL(rawUrl)
     const hostname = parsed.hostname
     const port = parsed.port
 
@@ -52,7 +54,7 @@ export function resolveServiceId(
   return 'external'
 }
 
-/** Converts RawSchema[] to Schema[] (field structure is compatible) */
+/** Converts RawSchema[] to Schema[] */
 function convertSchemas(raw: RawSchema[]): Schema[] {
   return raw.map((s) => ({
     name: s.name,
@@ -62,30 +64,33 @@ function convertSchemas(raw: RawSchema[]): Schema[] {
   }))
 }
 
-/** Converts RawRoute[] to Route[] with SchemaRef linking */
+/** Converts RawRoute[] to Route[] with SchemaRef linking.
+ * Uses explicit conditional spread to satisfy exactOptionalPropertyTypes.
+ */
 function convertRoutes(raw: RawRoute[]): Route[] {
   return raw.map((r) => ({
     method: r.method,
     path: r.path,
     handler: r.handler,
-    inputPayload: r.inputSchemaName ? { schemaName: r.inputSchemaName } : undefined,
-    outputPayload: r.outputSchemaName ? { schemaName: r.outputSchemaName } : undefined,
+    ...(r.inputSchemaName !== undefined
+      ? { inputPayload: { schemaName: r.inputSchemaName } }
+      : {}),
+    ...(r.outputSchemaName !== undefined
+      ? { outputPayload: { schemaName: r.outputSchemaName } }
+      : {}),
     sourceFile: r.file,
     sourceLine: r.line,
   }))
 }
 
-/**
- * Determines NodeType for a service based on its name / directory.
- * Infrastructure is detected separately via detectInfraNodes.
- */
+/** Determines NodeType for a service. */
 function determineNodeType(_output: RawParserOutput): NodeType {
   return 'service'
 }
 
 /**
  * Builds a ServiceNode from a single RawParserOutput.
- * Does NOT yet resolve dependencies — that happens after all nodes are built.
+ * Dependencies are filled later by edge builder.
  */
 export function buildServiceNode(output: RawParserOutput): ServiceNode {
   const id = deriveServiceId(output.servicePath)
@@ -97,7 +102,7 @@ export function buildServiceNode(output: RawParserOutput): ServiceNode {
     framework: output.framework,
     nodeType: determineNodeType(output),
     routes: convertRoutes(output.routes),
-    dependencies: [], // filled later by edge builder
+    dependencies: [],
     schemas: convertSchemas(output.schemas),
   }
 }

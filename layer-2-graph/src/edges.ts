@@ -2,11 +2,6 @@ import type { RawParserOutput } from '@smart-map/shared'
 import type { Edge, ServiceNode } from '@smart-map/shared'
 import { resolveServiceId, deriveServiceId } from './resolver.js'
 
-let _edgeCounter = 0
-function edgeId(from: string, to: string, suffix: string): string {
-  return `${from}->${to}:${suffix}:${++_edgeCounter}`
-}
-
 /**
  * Builds HTTP edges from all RawParserOutput[].httpCalls.
  * Each RawHttpCall URL is resolved to a target ServiceNode ID.
@@ -27,7 +22,6 @@ export function buildHttpEdges(
       // Skip self-loops
       if (toId === fromId) continue
 
-      // Ensure target node exists (add external if needed — handled in buildGraph)
       edges.push({
         from: fromId,
         to: toId,
@@ -42,22 +36,20 @@ export function buildHttpEdges(
   return edges
 }
 
-function extractPath(url: string): string {
+function extractPath(rawUrl: string): string {
   try {
-    return new URL(url).pathname
+    return new URL(rawUrl).pathname
   } catch {
-    return url
+    return rawUrl
   }
 }
 
 /**
  * Builds Redis queue edges.
- * If service A publishes to queue X and service B consumes from queue X → Edge A→B (kind: queue).
- * If a queue has no consumer → Edge from publisher to the Redis infra node.
+ * publish A + consume B on same queue → Edge A→B.
+ * publish with no consumer → Edge to Redis infra node.
  *
- * Note: Edge type in shared/ doesn't have a `kind` field yet,
- * so we encode queue edges with method='GET' and path='queue:<name>'.
- * This can be extended when shared/ adds an EdgeKind type.
+ * Queue edges are encoded as method='POST', path='queue:<name>'.
  */
 export function buildRedisEdges(
   outputs: RawParserOutput[],
@@ -65,7 +57,6 @@ export function buildRedisEdges(
 ): Edge[] {
   const edges: Edge[] = []
 
-  // Map: queueName → { publishers: serviceId[], consumers: serviceId[] }
   const queueMap = new Map<string, { publishers: string[]; consumers: string[] }>()
 
   for (const output of outputs) {
@@ -98,7 +89,6 @@ export function buildRedisEdges(
           })
         }
       } else if (redisNodeExists) {
-        // No consumer known — edge to Redis infra node
         edges.push({
           from: pub,
           to: 'redis',
