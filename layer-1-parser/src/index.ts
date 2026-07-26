@@ -6,9 +6,6 @@ import { parsePythonProject } from './languages/python.js';
 
 export type { RawParserOutput } from '@smart-map/shared';
 
-/**
- * Detect project language/framework by inspecting root files.
- */
 function detectLanguage(rootDir: string): 'typescript' | 'python' | 'unknown' {
   if (
     existsSync(join(rootDir, 'tsconfig.json')) ||
@@ -26,10 +23,6 @@ function detectLanguage(rootDir: string): 'typescript' | 'python' | 'unknown' {
   return 'unknown';
 }
 
-/**
- * Parse a project directory and return raw parser output per service.
- * Supports TypeScript (Express / Fastify / NestJS) and Python (FastAPI).
- */
 export async function parseProject(
   rootDir: string,
 ): Promise<RawParserOutput[]> {
@@ -38,7 +31,6 @@ export async function parseProject(
   if (lang === 'typescript') {
     return parseTypeScriptProject(rootDir);
   }
-
   if (lang === 'python') {
     return parsePythonProject(rootDir);
   }

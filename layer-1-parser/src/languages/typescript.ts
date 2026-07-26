@@ -1,5 +1,6 @@
 import { Project, SyntaxKind, Node } from 'ts-morph';
 import { join, basename } from 'node:path';
+import { existsSync } from 'node:fs';
 import { glob } from 'glob';
 import type {
   RawParserOutput,
@@ -9,16 +10,16 @@ import type {
   EnvEntry,
 } from '@smart-map/shared';
 
-// ─── Routes ──────────────────────────────────────────────────────────────────
-
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'] as const;
+
+// ─── Routes ──────────────────────────────────────────────────────────────────
 
 function extractRoutes(project: Project): RawRoute[] {
   const routes: RawRoute[] = [];
 
   for (const file of project.getSourceFiles()) {
     file.forEachDescendant((node) => {
-      // Express/Fastify: app.get('/path', ...) or router.post('/path', ...)
+      // Express/Fastify: app.get('/path', handler)
       if (Node.isCallExpression(node)) {
         const expr = node.getExpression();
         if (Node.isPropertyAccessExpression(expr)) {
@@ -26,38 +27,40 @@ function extractRoutes(project: Project): RawRoute[] {
           if ((HTTP_METHODS as readonly string[]).includes(method)) {
             const args = node.getArguments();
             const firstArg = args[0];
+            const handlerArg = args[1];
             if (firstArg && Node.isStringLiteral(firstArg)) {
               routes.push({
                 method: method.toUpperCase() as RawRoute['method'],
                 path: firstArg.getLiteralValue(),
+                handler: handlerArg?.getText() ?? 'anonymous',
                 file: file.getFilePath(),
                 line: node.getStartLineNumber(),
               });
             }
           }
         }
-
-        // NestJS: @Get('/path'), @Post('/path'), etc.
-        if (Node.isDecorator(node.getParent() as Node)) {
-          // decorators are handled below
-        }
       }
 
-      // NestJS decorators on methods
+      // NestJS: @Get('/path'), @Post('/path')
       if (Node.isDecorator(node)) {
         const callExpr = node.getCallExpression();
         if (!callExpr) return;
         const name = callExpr.getExpression().getText();
-        const upperName = name.toUpperCase();
         if ((HTTP_METHODS as readonly string[]).includes(name.toLowerCase())) {
           const args = callExpr.getArguments();
           const firstArg = args[0];
           const path = firstArg && Node.isStringLiteral(firstArg)
             ? firstArg.getLiteralValue()
             : '/';
+          // handler is the decorated method
+          const parent = node.getParent();
+          const handler = Node.isMethodDeclaration(parent)
+            ? parent.getName()
+            : 'unknown';
           routes.push({
-            method: upperName as RawRoute['method'],
+            method: name.toUpperCase() as RawRoute['method'],
             path,
+            handler,
             file: file.getFilePath(),
             line: node.getStartLineNumber(),
           });
@@ -77,7 +80,6 @@ function extractHttpCalls(project: Project): RawHttpCall[] {
   for (const file of project.getSourceFiles()) {
     file.forEachDescendant((node) => {
       if (!Node.isCallExpression(node)) return;
-
       const expr = node.getExpression();
       const text = expr.getText();
 
@@ -89,33 +91,28 @@ function extractHttpCalls(project: Project): RawHttpCall[] {
           ? urlArg.getLiteralValue()
           : urlArg?.getText() ?? 'unknown';
 
-        let method = 'GET';
+        let method: RawHttpCall['method'] = 'GET';
         const optionsArg = args[1];
         if (optionsArg && Node.isObjectLiteralExpression(optionsArg)) {
           const methodProp = optionsArg.getProperty('method');
           if (methodProp && Node.isPropertyAssignment(methodProp)) {
             const init = methodProp.getInitializer();
             if (init && Node.isStringLiteral(init)) {
-              method = init.getLiteralValue().toUpperCase();
+              method = init.getLiteralValue().toUpperCase() as RawHttpCall['method'];
             }
           }
         }
 
-        calls.push({
-          url,
-          method: method as RawHttpCall['method'],
-          file: file.getFilePath(),
-          line: node.getStartLineNumber(),
-        });
+        calls.push({ url, method, file: file.getFilePath(), line: node.getStartLineNumber() });
       }
 
-      // axios.get/post/put/delete('url')
+      // axios.get/post/...
       if (Node.isPropertyAccessExpression(expr)) {
         const obj = expr.getExpression().getText();
-        const method = expr.getName().toUpperCase();
+        const methodName = expr.getName().toUpperCase();
         if (
           obj === 'axios' &&
-          (HTTP_METHODS as readonly string[]).includes(method.toLowerCase())
+          (HTTP_METHODS as readonly string[]).includes(methodName.toLowerCase())
         ) {
           const urlArg = node.getArguments()[0];
           const url = urlArg && Node.isStringLiteral(urlArg)
@@ -123,7 +120,7 @@ function extractHttpCalls(project: Project): RawHttpCall[] {
             : urlArg?.getText() ?? 'unknown';
           calls.push({
             url,
-            method: method as RawHttpCall['method'],
+            method: methodName as RawHttpCall['method'],
             file: file.getFilePath(),
             line: node.getStartLineNumber(),
           });
@@ -141,7 +138,6 @@ function extractSchemas(project: Project): RawSchema[] {
   const schemas: RawSchema[] = [];
 
   for (const file of project.getSourceFiles()) {
-    // TypeScript interfaces
     for (const iface of file.getInterfaces()) {
       const fields: RawSchema['fields'] = [];
       for (const prop of iface.getProperties()) {
@@ -159,7 +155,6 @@ function extractSchemas(project: Project): RawSchema[] {
       });
     }
 
-    // TypeScript type aliases (object types)
     for (const typeAlias of file.getTypeAliases()) {
       const typeNode = typeAlias.getTypeNode();
       if (!typeNode || typeNode.getKind() !== SyntaxKind.TypeLiteral) continue;
@@ -196,36 +191,24 @@ function extractEnvConfig(project: Project): EnvEntry[] {
 
   for (const file of project.getSourceFiles()) {
     file.forEachDescendant((node) => {
-      // process.env.KEY or process.env['KEY']
+      // process.env.KEY
       if (Node.isPropertyAccessExpression(node)) {
         const text = node.getText();
         const match = text.match(/^process\.env\.([A-Z0-9_]+)$/);
-        if (match && match[1] && !seen.has(match[1])) {
+        if (match?.[1] && !seen.has(match[1])) {
           seen.add(match[1]);
-          entries.push({
-            key: match[1],
-            file: file.getFilePath(),
-            line: node.getStartLineNumber(),
-          });
+          entries.push({ key: match[1], value: '' });
         }
       }
-
+      // process.env['KEY']
       if (Node.isElementAccessExpression(node)) {
         const obj = node.getExpression().getText();
         const arg = node.getArgumentExpression();
-        if (
-          obj === 'process.env' &&
-          arg &&
-          Node.isStringLiteral(arg)
-        ) {
+        if (obj === 'process.env' && arg && Node.isStringLiteral(arg)) {
           const key = arg.getLiteralValue();
           if (!seen.has(key)) {
             seen.add(key);
-            entries.push({
-              key,
-              file: file.getFilePath(),
-              line: node.getStartLineNumber(),
-            });
+            entries.push({ key, value: '' });
           }
         }
       }
@@ -241,14 +224,15 @@ export async function parseTypeScriptProject(
   rootDir: string,
 ): Promise<RawParserOutput[]> {
   const tsconfigPath = join(rootDir, 'tsconfig.json');
+  const hasTsConfig = existsSync(tsconfigPath);
 
-  const project = new Project({
-    tsConfigFilePath: existsSync(tsconfigPath) ? tsconfigPath : undefined,
-    addFilesFromTsConfig: existsSync(tsconfigPath),
-    skipFileDependencyResolution: true,
-  });
+  const project = new Project(
+    hasTsConfig
+      ? { tsConfigFilePath: tsconfigPath, skipFileDependencyResolution: true }
+      : { compilerOptions: { allowJs: true } },
+  );
 
-  if (!existsSync(tsconfigPath)) {
+  if (!hasTsConfig) {
     const files = await glob('**/*.{ts,tsx}', {
       cwd: rootDir,
       ignore: ['node_modules/**', 'dist/**', '**/*.d.ts'],
@@ -257,24 +241,21 @@ export async function parseTypeScriptProject(
     project.addSourceFilesAtPaths(files);
   }
 
-  const serviceName = basename(rootDir);
-
   const output: RawParserOutput = {
-    serviceName,
+    servicePath: rootDir,
     language: 'typescript',
     framework: detectTsFramework(project),
     routes: extractRoutes(project),
     httpCalls: extractHttpCalls(project),
     schemas: extractSchemas(project),
     envConfig: extractEnvConfig(project),
+    parsedAt: Date.now(),
   };
 
   return [output];
 }
 
-function detectTsFramework(
-  project: Project,
-): RawParserOutput['framework'] {
+function detectTsFramework(project: Project): RawParserOutput['framework'] {
   for (const file of project.getSourceFiles()) {
     const text = file.getFullText();
     if (text.includes('@nestjs/')) return 'nestjs';
@@ -283,15 +264,4 @@ function detectTsFramework(
     if (text.includes('next')) return 'nextjs';
   }
   return 'unknown';
-}
-
-function existsSync(path: string): boolean {
-  try {
-    import('node:fs').then(({ existsSync: es }) => es(path));
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { existsSync: es } = require('node:fs');
-    return es(path) as boolean;
-  } catch {
-    return false;
-  }
 }
