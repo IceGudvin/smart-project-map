@@ -4,9 +4,9 @@
  * Содержит:
  *   - SVG-логотип: 3 круга + линии между ними, currentColor
  *   - Путь проекта из store.graph.meta?.projectPath
- *   - WS-индикатор: пульсирующая точка + текст live/offline
- *   - ↺ Refresh → POST /graph/rebuild
- *   - ⊡ Fit → emit('cy:fit')
+ *   - WS-индикатор: пульсирующая точка + текст активен/отключён
+ *   - ↺ Обновить → POST /graph/rebuild
+ *   - ⊡ Вписать → emit('cy:fit')
  *   - Переключатель темы (moon/sun)
  *   - updatedAt таймстамп из store.graph.updatedAt (или X-Updated-At заголовка)
  *
@@ -230,10 +230,10 @@ const SUN_SVG = /* svg */`
 // ================================================================ WS labels
 
 const WS_LABEL: Record<string, string> = {
-  connected:    'live',
-  connecting:   'connecting',
-  disconnected: 'offline',
-  error:        'error',
+  connected:    'активен',
+  connecting:   'подключение',
+  disconnected: 'отключён',
+  error:        'ошибка',
 }
 
 // ================================================================ Header
@@ -325,25 +325,25 @@ export class Header {
     this._wsDot.className = 'hdr-ws-dot'
     this._wsLabel = document.createElement('span')
     this._wsLabel.className = 'hdr-ws-label'
-    this._wsLabel.textContent = 'offline'
+    this._wsLabel.textContent = 'отключён'
     this._wsEl.appendChild(this._wsDot)
     this._wsEl.appendChild(this._wsLabel)
     this.el.appendChild(this._wsEl)
 
     this.el.appendChild(this._makeSep())
 
-    // ---- Refresh (POST /graph/rebuild)
+    // ---- Обновить (POST /graph/rebuild)
     this._refreshBtn = document.createElement('button')
     this._refreshBtn.className = 'hdr-btn'
-    this._refreshBtn.setAttribute('aria-label', 'Rebuild graph')
-    this._refreshBtn.innerHTML = `<span class="hdr-refresh-icon">↺</span> Refresh`
+    this._refreshBtn.setAttribute('aria-label', 'Пересобрать граф')
+    this._refreshBtn.innerHTML = `<span class="hdr-refresh-icon">↺</span> Обновить`
     this.el.appendChild(this._refreshBtn)
 
-    // ---- Fit
+    // ---- Вписать
     const fitBtn = document.createElement('button')
     fitBtn.className = 'hdr-btn'
-    fitBtn.setAttribute('aria-label', 'Fit graph to canvas')
-    fitBtn.textContent = '⊡ Fit'
+    fitBtn.setAttribute('aria-label', 'Вписать граф в экран')
+    fitBtn.textContent = '⊡ Вписать'
     fitBtn.addEventListener('click', () => emit('cy:fit', undefined as any))
     this.el.appendChild(fitBtn)
 
@@ -352,7 +352,7 @@ export class Header {
     // ---- Тема
     this._themeBtn = document.createElement('button')
     this._themeBtn.className = 'hdr-theme'
-    this._themeBtn.setAttribute('aria-label', 'Toggle theme')
+    this._themeBtn.setAttribute('aria-label', 'Сменить тему')
     this.el.appendChild(this._themeBtn)
   }
 
@@ -452,7 +452,7 @@ export class Header {
     this._themeBtn.innerHTML = isDark ? SUN_SVG : MOON_SVG
     this._themeBtn.setAttribute(
       'aria-label',
-      isDark ? 'Switch to light theme' : 'Switch to dark theme'
+      isDark ? 'Светлая тема' : 'Тёмная тема'
     )
   }
 
