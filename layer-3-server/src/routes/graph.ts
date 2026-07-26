@@ -28,13 +28,6 @@ export function registerGraphRoutes(app: FastifyInstance): void {
         return reply.code(400).send({ error: 'projectPath or projectPaths is required' })
       }
 
-      // Debug: print received paths and hex of first path
-      console.log('[rebuild] received paths:', JSON.stringify(paths))
-      if (paths[0]) {
-        const hex = Buffer.from(paths[0], 'utf8').toString('hex')
-        console.log('[rebuild] path[0] hex:', hex)
-      }
-
       try {
         const diff = await store.rebuild(paths)
         const model = store.get()!
