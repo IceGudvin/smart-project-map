@@ -1,3 +1,39 @@
+## [2026-07-26] — Layer 0: CLI + File Watcher
+
+### Добавлено
+- `layer-0-cli/` — полная реализация Layer 0
+- `layer-0-cli/src/index.ts` — CLI точка входа: парсинг аргументов, валидация путей, запуск сервера + watcher
+- `chokidar` file watcher: следит за `**/*.ts`, `**/*.py`, `**/*.js`
+- Debounce 500ms — исключает лишние rebuild при массовых сохранениях
+- Игнор: `node_modules`, `__pycache__`, `.git`, `dist`, `build`, `venv`, `*.pyc`
+- При изменении файла → `store.rebuild()` напрямую → broadcast WS `graph:update`
+- `--port=XXXX` флаг для кастомизации порта
+- Грациозное завершение по SIGINT (Ctrl+C)
+
+### Изменено
+- `layer-3-server/src/index.ts` — рефактор: вынесен `startServer()`, экспорт `store` и `broadcast` для layer-0-cli
+- `layer-3-server/package.json` — убран `private: true`, добавлен `exports` для workspace-импорта
+- `layer-3-server/src/ws/handler.ts` — `broadcast` экспортирован отдельно
+- `host` сменён `0.0.0.0` → `127.0.0.1` по умолчанию — фикс EADDRINUSE при запуске через layer-0-cli
+
+### Исправлено
+- `layer-2-graph/tsconfig.json` — добавлен `"DOM"` в `lib` (фикс `Cannot find name 'URL'`)
+- `layer-2-graph/src/resolver.ts` — фикс `exactOptionalPropertyTypes` для `Route[]`
+- `layer-1-parser/src/index.ts` — `realpathSync` для нормализации путей с кириллицей на Windows
+- PowerShell encoding: `UTF8.GetBytes()` — правильная передача UTF-8 JSON
+
+### Проверено на Leadway
+- `pnpm dev C:/Users/Кирилл/Desktop/leadway/backend C:/Users/Кирилл/Desktop/leadway/agent` — запуск без ошибок ✅
+- ✅ Graph built: 5 nodes, 27 edges
+- При сохранении `test_watcher.py` — автоматический rebuild ✅
+- WebSocket клиент подключился и принимает события ✅
+
+### Зафиксировано в репо
+- Roadmap: Issue #5
+- Коммиты: `6ba511f`, `922e356`, `bc196769`, `5e58267`, `ed9d6f6`
+
+---
+
 ## [2026-07-26] — Layer 3: Fastify Server + WebSocket
 
 ### Добавлено
