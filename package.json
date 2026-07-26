@@ -1,0 +1,19 @@
+{
+  "name": "smart-project-map",
+  "version": "0.1.0",
+  "description": "Interactive project architecture map",
+  "private": true,
+  "workspaces": [
+    "layer-0-cli",
+    "layer-1-parser",
+    "layer-2-graph",
+    "layer-3-server",
+    "layer-4-ui",
+    "layer-5-dataflow",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "node layer-0-cli/index.js",
+    "build": "tsc --build"
+  }
+}
