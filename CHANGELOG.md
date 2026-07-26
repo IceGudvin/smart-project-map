@@ -1,137 +1,56 @@
-# Changelog
-
-> Лог всех изменений по сессиям. Новые записи добавляются **сверху**.
-> Файл только дополняется — старые записи не удаляются.
-> При превышении ~300 строк создаётся CHANGELOG-v2.md.
-
----
-
-## [2026-07-26] — Реализация Layer 2: Graph Builder
-
-Ссылка на Roadmap: [Issue #3](https://github.com/IceGudvin/smart-project-map/issues/3)
+## [2026-07-26] — Layer 3: Fastify Server + WebSocket
 
 ### Добавлено
-- **`layer-2-graph/package.json`** — пакет `@smart-map/layer-2-graph` с зависимостью на `@smart-map/shared`
-- **`layer-2-graph/tsconfig.json`** + **`layer-2-graph/tsup.config.ts`** — конфигурация сборки
-- **`layer-2-graph/src/resolver.ts`**:
-  - `deriveServiceId(servicePath)` — стабильный ID из пути (basename)
-  - `resolveServiceId(url, nodes, allOutputs)` — маппинг URL → ServiceNode.id по hostname / порту, внешние → `external`
-  - `buildServiceNode(output)` — `RawParserOutput` → `ServiceNode` с конвертацией routes, schemas
-- **`layer-2-graph/src/infrastructure.ts`**:
-  - `detectInfraNodes(allEnvConfigs)` — сканирует `.env` по паттернам: PostgreSQL, Redis, MinIO/S3, MongoDB, RabbitMQ
-  - Возвращает `ServiceNode[]` с `nodeType: 'infrastructure'`
-- **`layer-2-graph/src/edges.ts`**:
-  - `buildHttpEdges(outputs, nodes)` — HTTP-вызовы → `Edge[]`, нерезолвленные → `external`
-  - `buildRedisEdges(outputs, nodes)` — publish/consume по очереди → Edge между сервисами; без consumer → Edge к Redis-узлу
-- **`layer-2-graph/src/index.ts`**:
-  - `buildGraph(outputs: RawParserOutput[]): GraphModel` — главная функция (5 шагов: nodes → infra → external → redis edges → dependencies)
-  - `buildGraphDiff(prev, next): GraphDiff` — инкрементальный diff для WebSocket
-
-### Зафиксировано в репо
-- feat: implement layer-2-graph: [`0c4b724`](https://github.com/IceGudvin/smart-project-map/commit/0c4b724569e5f271990be347ad52a5ca619630d0)
-
-### В следующей сессии
-- **Layer 3: Fastify Server + WebSocket** — принимает `GraphModel` от Layer 2, REST API + WebSocket, подключение к Layer 0 (file watcher) для инкрементальных обновлений
-
----
-
-## [2026-07-26] — Довыливка и закрытие Layer 1: Redis-экстрактор + фикс типов
-
-Ссылка на Roadmap: [Issue #2](https://github.com/IceGudvin/smart-project-map/issues/2)
-
-### Добавлено
-- **`layer-1-parser/src/languages/variable-resolver.ts`** — мини data-flow анализатор:
-  - `buildVariableMap` — собирает прямые присваивания, `UPPER_CASE` константы, dict-пары, `settings.X` через `.env`
-  - `resolveToken` — разрешает любой аргумент функции: строка, переменная, f-строка, `settings.X`
-- **`layer-1-parser/src/languages/python.ts`** — полный Redis-экстрактор:
-  - `REDIS_CMD_RE` — универсальный паттерн для 8 команд: `rpush`, `lpush`, `xadd`, `publish`, `blpop`, `brpop`, `subscribe`, `xread`
-  - `isUnresolvedVariable` — фильтр неразрешённых переменных (`queue`, `dlq_name`, `logs_key`)
-  - Двухпроходный оркестратор: сначала `.env` + `os.environ`, затем парсинг с известными значениями
-  - HTTP: поддержка многострочных `await client.post(\n f"..."`
+- `layer-3-server/` — полная реализация Layer 3
+- `GET /health` — healthcheck
+- `GET /graph` — возвращает текущий GraphModel, 503 если граф не готов
+- `POST /graph/rebuild` — принимает `projectPath` или `projectPaths[]`, запускает parser+buildGraph, броадкастит WS-дифф
+- WebSocket `/ws` — `graph:full` при подключении, `graph:update` при rebuild, ping/pong 30s
+- `GraphStore` singleton — хранит текущий `GraphModel` в памяти
 
 ### Изменено
-- **`shared/src/index.ts`** — исправлены экспорты: удалены несуществующие `EdgeKind`, `WsEventKind`; добавлены `NodeType`, `SchemaField`, `Schema`, `SchemaRef`, `Route`, `WsEvent*`
-- **`layer-1-parser/src/languages/typescript.ts`** — добавлено `redisCalls: []` в выходной объект (TypeScript Redis-экстрактор — следующая сессия)
-- **`SPACE_INSTRUCTIONS.md`** — добавлен раздел с шаблоном и правилами Roadmap-issue
+- `store.rebuild()` теперь принимает `string | string[]` — поддержка нескольких сервисов в одном запросе
+- Убран `pino-pretty` transport (requires install), заменён на `logger: true`
+- `@fastify/websocket` обновлён до `^11` для совместимости с Fastify 5
 
-### Результаты проверки на Leadway
-
-| Сервис | language | routes | httpCalls | redis | schemas | envConfig |
-|--------|----------|--------|-----------|-------|---------|----------|
-| backend | python | 134 | 14 | 8 | 84 | 35 |
-| agent | python | 1 | 4 | 7 | 0 | 9 |
+### Проверено на Leadway
+- `GET /health` → `{status:'ok'}` ✅
+- `GET /graph` до rebuild → 503 ✅
+- `POST /graph/rebuild` с `projectPaths` → `{nodesCount:5, edgesCount:27}` ✅
+- `GET /graph` после rebuild → полный GraphModel ✅
 
 ### Зафиксировано в репо
-- `variable-resolver.ts` + Python Redis: [`0eedcd3`](https://github.com/IceGudvin/smart-project-map/commit/0eedcd39465536fb313356cfa28315f3d4e11d25)
-- Фильтр неразрешённых переменных: [`4a404f1`](https://github.com/IceGudvin/smart-project-map/commit/4a404f1cfeb82f5dc4b3bab2d69d81c6b791e842)
-- Фикс экспортов shared/index.ts: [`f51d713`](https://github.com/IceGudvin/smart-project-map/commit/f51d71363fee685b3ec5a515e5d2fea9c0a1942a)
-- redisCalls: [] в TS-экстракторе: [`b41c3bd`](https://github.com/IceGudvin/smart-project-map/commit/b41c3bdda1e307ce1dd59e4c70e537d0fd3adb7a)
-
-### В следующей сессии
-- **Layer 2: Graph Builder** — `RawParserOutput[]` → `GraphModel`, URL → ServiceNode, инфраструктурные узлы, Redis-ребра как Edge
+- Roadmap: Issue #4
+- Commits: feat layer-3-server, fix websocket compat, fix pino-pretty, fix projectPaths[]
 
 ---
 
-## [2026-07-26] — Реализация Layer 1: парсеры TypeScript + Python
-
-Ссылка на Roadmap: [Issue #2](https://github.com/IceGudvin/smart-project-map/issues/2)
+## [2026-07-26] — Layer 2: Graph Builder
 
 ### Добавлено
-- **`layer-1-parser/src/languages/typescript.ts`** — полноценная реализация на `ts-morph`:
-  - `extractRoutes` — Express/Fastify (`app.get/post/...`) и NestJS (`@Get/@Post/...`) декораторы
-  - `extractHttpCalls` — `fetch()` (с парсингом `options.method`), `axios.*`, `got.*`
-  - `extractSchemas` — TypeScript `interface` и `type` алиасы (с `TypeLiteral`)
-  - `extractEnvConfig` — `process.env.KEY` и `process.env['KEY']`
-- **`layer-1-parser/src/languages/python.ts`** — полноценная реализация на regex:
-  - `extractRoutes` — `@router.post/get/put/patch/delete`, `@app.post/get`
-  - `extractHttpCalls` — `httpx.*`, `requests.*`
-  - `extractSchemas` — Pydantic v2 `BaseModel` классы
-  - `extractEnvConfig` — `os.environ`, `os.getenv`, парсинг `.env` файла
-- **`layer-1-parser/src/index.ts`** — оркестратор `parseProject(rootDir)`
+- `layer-2-graph/` — полная реализация Layer 2
+- `buildGraph(outputs[])` → `GraphModel` с узлами, рёбрами, инфра-узлами
+- `buildGraphDiff(prev, next)` → `GraphDiff` для WebSocket инкрементальных обновлений
+- `src/resolver.ts` — URL → ServiceNode резолвер, инфра-узлы
+- `src/edges.ts` — HTTP + Redis queue рёбра
+- `src/infrastructure.ts` — автодетекция Postgres/Redis/MinIO из `.env`
 
-### Изменено
-- `shared/src/parser.ts` — `RawHttpCall.method` переведён в обязательный
+### Проверено на Leadway
+- 5 узлов (backend, agent, postgres, redis, external)
+- 27 рёбер (18 HTTP + 9 queue)
 
 ### Зафиксировано в репо
-- [`f88b149`](https://github.com/IceGudvin/smart-project-map/commit/f88b149a16d11fba998c19b68eb8b9eed0148025)
+- Roadmap: Issue #3
 
 ---
 
-## [2026-07-26] — Старт реализации: monorepo + shared/ + layer-1-parser скелет
-
-Ссылка на Roadmap: [Issue #1](https://github.com/IceGudvin/smart-project-map/issues/1)
+## [2026-07-26] — Старт реализации: shared/ + monorepo
 
 ### Добавлено
-- `pnpm-workspace.yaml` — явный список 7 пакетов monorepo
-- `tsconfig.base.json` — strict TypeScript для всех слоёв
-- `.gitignore`
-- **`shared/`** — полный набор TypeScript-типов
-- **`layer-1-parser/`** — скелет
-- `SPACE_INSTRUCTIONS.md`
+- npm workspaces monorepo (корневой `package.json`, `tsconfig.base.json`)
+- `shared/` — типы `GraphModel`, `ServiceNode`, `Edge`, `RawParserOutput`, `WsEvent`
+- `layer-1-parser/` — парсер TypeScript/Python сервисов
+- `layer-2-graph/` — построение графа зависимостей
 
 ### Зафиксировано в репо
-- [`cdd8053`](https://github.com/IceGudvin/smart-project-map/commit/cdd8053a7244b32e6db2b12c022c4e78adbe4e4e)
-
----
-
-## [2026-07-26] — Референсный проект Leadway, детализация Python/FastAPI слоя
-
-### Добавлено
-- Раздел «Референсный проект: Leadway» в `CONCEPT.md`
-- Таблица стека Leadway: FastAPI 0.111, SQLAlchemy 2.0, PostgreSQL, Redis, MinIO, PyJWT, Next.js
-- Data-flow пример `POST /auth/login` для Layer 5
-
-### Зафиксировано в репо
-- `CONCEPT.md` — коммит `02b6992`
-
----
-
-## [2026-07-26] — Инициализация проекта, концепция и архитектура
-
-### Добавлено
-- `README.md`, `CONCEPT.md`, `SPACE_INSTRUCTIONS.md`, `CHANGELOG.md`
-- `package.json` — npm workspaces
-- Каталоги слоёв и README в каждом
-
-### Зафиксировано в репо
-- Инициализация репозитория
+- Roadmap: Issue #1, Issue #2
