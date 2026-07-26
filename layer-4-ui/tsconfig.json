@@ -4,16 +4,14 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
+    "skipLibCheck": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "resolveJsonModule": true,
+    "exactOptionalPropertyTypes": true,
+    "baseUrl": ".",
     "paths": {
-      "@shared/*": ["../shared/src/*"],
-      "@/*": ["./src/*"]
+      "@spm/shared": ["../shared/src/index.ts"],
+      "@/*": ["src/*"]
     }
   },
   "include": ["src"]

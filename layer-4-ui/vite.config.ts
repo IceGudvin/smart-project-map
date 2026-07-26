@@ -1,21 +1,19 @@
 import { defineConfig } from 'vite'
-import { resolve } from 'path'
+import path from 'path'
 
 export default defineConfig({
   resolve: {
     alias: {
-      '@shared': resolve(__dirname, '../shared/src'),
-      '@': resolve(__dirname, './src'),
+      '@spm/shared': path.resolve(__dirname, '../shared/src/index.ts'),
+      '@': path.resolve(__dirname, './src'),
     },
   },
   server: {
-    port: 4000,
-    // Proxy WebSocket to layer-3-server
+    port: 5173,
     proxy: {
       '/ws': {
         target: 'ws://localhost:3000',
         ws: true,
-        rewrite: (path) => path.replace(/^\/ws/, ''),
       },
       '/api': {
         target: 'http://localhost:3000',
