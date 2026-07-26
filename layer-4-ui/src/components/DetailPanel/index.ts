@@ -1,95 +1,278 @@
-import type { Store } from '../../store'
-import { RouteList } from './RouteList'
-import { SchemaBlock } from './SchemaBlock'
-import { DepList } from './DepList'
-import type { ServiceNode } from '../../../../shared/types'
-
 /**
- * DetailPanel — правая панель с деталями выбранного узла.
- *
- * Структура (когда открыта):
- *   .panel-header — иконка, имя, подзаголовок, кнопка закрытия
- *   .panel-body
- *     ├── RouteList   — HTTP роуты (если есть)
- *     ├── SchemaBlock — схемы данных (Pydantic / TypeScript-типы)
- *     └── DepList     — зависимости (входящие и исходящие рёбра)
- *
- * show(id) — открывает панель для узла с данным id.
- * hide()   — закрывает панель.
+ * DetailPanel — slide-in справа, glassmorphism.
+ * Шапка: иконка + имя + стек + N routes · N schemas · N deps
+ * Вкладки: Routes / Schemas / Deps
+ * Закрытие: кнопка × + Esc
  */
+import type { ServiceNode } from '../../../../shared/src/graph.js';
+import { emit, on } from '../../lib/eventBus.js';
+import { store } from '../../store.js';
+import { RouteList } from './RouteList.js';
+import { SchemaBlock } from './SchemaBlock.js';
+import { DepList } from './DepList.js';
+import { injectDetailStyles } from './styles.js';
 
-export class DetailPanel {
-  private store: Store
-  private el: HTMLElement | null = null
+type Tab = 'routes' | 'schemas' | 'deps';
 
-  constructor(store: Store) {
-    this.store = store
-  }
+export const DetailPanel = {
+  _el:        null as HTMLElement | null,
+  _inner:     null as HTMLElement | null,
+  _body:      null as HTMLElement | null,
+  _activeTab: 'routes' as Tab,
+  _node:      null as ServiceNode | null,
+  _escHandler: null as ((e: KeyboardEvent) => void) | null,
 
-  render(): HTMLElement {
-    const panel = document.createElement('div')
-    panel.className = 'detail-panel'
-    panel.id = 'detailPanel'
-    panel.setAttribute('role', 'complementary')
-    panel.setAttribute('aria-label', 'Детали сервиса')
-    panel.setAttribute('aria-hidden', 'true')
-    panel.innerHTML = `
-      <div class="panel-header">
-        <div class="panel-icon service" id="panelIcon" aria-hidden="true">⚙</div>
-        <div>
-          <div class="panel-name" id="panelName">—</div>
-          <div class="panel-sub" id="panelSub">—</div>
-        </div>
-        <button class="panel-close" aria-label="Закрыть панель" id="panelClose">✕</button>
-      </div>
-      <div class="panel-body" id="panelBody"></div>
-    `
-    panel.querySelector('#panelClose')?.addEventListener('click', () => this.hide())
-    this.el = panel
-    return panel
-  }
+  mount(container: HTMLElement): void {
+    injectDetailStyles();
 
-  show(nodeId: string): void {
-    const node = this.store.getNode(nodeId)
-    if (!node || !this.el) return
+    // Обёртка (backdrop click)
+    const backdrop = document.createElement('div');
+    backdrop.className = 'dp-backdrop';
+    backdrop.setAttribute('aria-hidden', 'true');
+    backdrop.addEventListener('click', () => this.close());
+    container.appendChild(backdrop);
 
-    this._fillHeader(node)
-    this._fillBody(node)
+    // Панель
+    const panel = document.createElement('aside');
+    panel.className = 'detail-panel';
+    panel.setAttribute('role', 'complementary');
+    panel.setAttribute('aria-label', 'Детали сервиса');
+    panel.setAttribute('aria-hidden', 'true');
+    container.appendChild(panel);
 
-    this.el.classList.add('open')
-    this.el.setAttribute('aria-hidden', 'false')
-  }
+    this._el = panel;
 
-  hide(): void {
-    this.el?.classList.remove('open')
-    this.el?.setAttribute('aria-hidden', 'true')
-    this.store.selectNode(null)
-  }
+    // --- шапка
+    const header = document.createElement('div');
+    header.className = 'dp-header';
+    panel.appendChild(header);
 
-  private _fillHeader(node: ServiceNode): void {
-    const icon = this.el?.querySelector('#panelIcon')
-    const name = this.el?.querySelector('#panelName')
-    const sub = this.el?.querySelector('#panelSub')
-    if (icon) { icon.textContent = node.type === 'service' ? '⚙' : '🗄'; icon.className = `panel-icon ${node.type === 'service' ? 'service' : 'infra'}` }
-    if (name) name.textContent = node.name
-    if (sub) sub.textContent = `${node.tech ?? node.type} · ${node.lang ?? ''}`
-  }
+    const headerLeft = document.createElement('div');
+    headerLeft.className = 'dp-header-left';
+    header.appendChild(headerLeft);
 
-  private _fillBody(node: ServiceNode): void {
-    const body = this.el?.querySelector('#panelBody')
-    if (!body) return
+    const iconWrap = document.createElement('div');
+    iconWrap.className = 'dp-icon-wrap';
+    iconWrap.setAttribute('aria-hidden', 'true');
+    headerLeft.appendChild(iconWrap);
 
-    const edges = this.store.getEdgesFor(node.id)
-    body.innerHTML = ''
+    const meta = document.createElement('div');
+    meta.className = 'dp-meta';
+    headerLeft.appendChild(meta);
 
-    if (node.routes?.length) {
-      body.appendChild(new RouteList(node.routes).render())
+    const nameEl = document.createElement('h2');
+    nameEl.className = 'dp-name';
+    meta.appendChild(nameEl);
+
+    const stackEl = document.createElement('div');
+    stackEl.className = 'dp-stack';
+    meta.appendChild(stackEl);
+
+    const statsEl = document.createElement('div');
+    statsEl.className = 'dp-stats';
+    header.appendChild(statsEl);
+
+    // кнопка ×
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'dp-close';
+    closeBtn.setAttribute('aria-label', 'Закрыть');
+    closeBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M18 6 6 18M6 6l12 12"/></svg>`;
+    closeBtn.addEventListener('click', () => this.close());
+    panel.appendChild(closeBtn);
+
+    // --- вкладки
+    const tabs = document.createElement('div');
+    tabs.className = 'dp-tabs';
+    tabs.setAttribute('role', 'tablist');
+    panel.appendChild(tabs);
+
+    const TAB_LABELS: { id: Tab; label: string }[] = [
+      { id: 'routes',  label: 'Routes'  },
+      { id: 'schemas', label: 'Schemas' },
+      { id: 'deps',    label: 'Deps'    },
+    ];
+
+    TAB_LABELS.forEach(({ id, label }) => {
+      const btn = document.createElement('button');
+      btn.className = 'dp-tab-btn';
+      btn.dataset['tab'] = id;
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', id === this._activeTab ? 'true' : 'false');
+      btn.setAttribute('aria-controls', `dp-panel-${id}`);
+      btn.textContent = label;
+      btn.addEventListener('click', () => this._switchTab(id));
+      tabs.appendChild(btn);
+    });
+
+    // --- тело
+    const body = document.createElement('div');
+    body.className = 'dp-body';
+    panel.appendChild(body);
+    this._body = body;
+
+    this._inner = panel;
+    // сохраняем ссылки для update
+    ;(panel as any)._dpRefs = { iconWrap, nameEl, stackEl, statsEl, tabs, body, backdrop };
+
+    // --- eventBus
+    on('node:select',   (id) => this._openById(id));
+    on('node:deselect', ()   => this.close());
+
+    // Esc
+    this._escHandler = (e) => { if (e.key === 'Escape') this.close(); };
+    document.addEventListener('keydown', this._escHandler);
+  },
+
+  // --- открыть по id узла из store ----------------------------------------
+  _openById(nodeId: string): void {
+    const graph = store.graph;
+    const node  = graph?.nodes.find(n => n.id === nodeId) ?? null;
+    if (!node) { this.close(); return; }
+    this._node = node;
+    this._activeTab = 'routes';
+    this._render();
+    this._open();
+  },
+
+  _render(): void {
+    const node = this._node;
+    if (!node || !this._inner) return;
+    const refs = (this._inner as any)._dpRefs as {
+      iconWrap: HTMLElement; nameEl: HTMLElement; stackEl: HTMLElement;
+      statsEl: HTMLElement; tabs: HTMLElement; body: HTMLElement; backdrop: HTMLElement;
+    };
+
+    // иконка (Simple Icons CDN)
+    refs.iconWrap.innerHTML = '';
+    const techIcon = _techIcon(node.framework, node.language);
+    refs.iconWrap.appendChild(techIcon);
+
+    // имя
+    refs.nameEl.textContent = node.name;
+
+    // стек
+    refs.stackEl.innerHTML = '';
+    const chips = _stackChips(node);
+    chips.forEach(c => refs.stackEl.appendChild(c));
+
+    // статистика
+    refs.statsEl.innerHTML = `
+      <span class="dp-stat"><b>${node.routes.length}</b> routes</span>
+      <span class="dp-dot"></span>
+      <span class="dp-stat"><b>${node.schemas.length}</b> schemas</span>
+      <span class="dp-dot"></span>
+      <span class="dp-stat"><b>${node.dependencies.length}</b> deps</span>
+    `;
+    // обновить badge цифр на вкладках
+    refs.tabs.querySelectorAll('.dp-tab-btn').forEach(btn => {
+      const t = (btn as HTMLElement).dataset['tab'] as Tab;
+      const counts: Record<Tab, number> = {
+        routes:  node.routes.length,
+        schemas: node.schemas.length,
+        deps:    node.dependencies.length,
+      };
+      btn.textContent = `${{ routes: 'Routes', schemas: 'Schemas', deps: 'Deps' }[t]} ${
+        counts[t] > 0 ? `(${counts[t]})` : ''
+      }`.trim();
+      btn.setAttribute('aria-selected', t === this._activeTab ? 'true' : 'false');
+      (btn as HTMLElement).classList.toggle('dp-tab-btn--active', t === this._activeTab);
+    });
+
+    this._renderBody();
+  },
+
+  _renderBody(): void {
+    const body = this._body;
+    const node = this._node;
+    if (!body || !node) return;
+    body.innerHTML = '';
+
+    const panel = document.createElement('div');
+    panel.setAttribute('role', 'tabpanel');
+    panel.id = `dp-panel-${this._activeTab}`;
+
+    switch (this._activeTab) {
+      case 'routes':  RouteList.render(panel, node.routes);                       break;
+      case 'schemas': SchemaBlock.render(panel, node.schemas);                    break;
+      case 'deps':    DepList.render(panel, node.dependencies, store.graph);      break;
     }
-    if (node.schemas?.length) {
-      body.appendChild(new SchemaBlock(node.schemas).render())
-    }
-    if (edges.length) {
-      body.appendChild(new DepList(node.id, edges, this.store).render())
-    }
-  }
+
+    body.appendChild(panel);
+  },
+
+  _switchTab(tab: Tab): void {
+    this._activeTab = tab;
+    if (!this._inner) return;
+    const refs = (this._inner as any)._dpRefs as { tabs: HTMLElement };
+    refs.tabs.querySelectorAll('.dp-tab-btn').forEach(btn => {
+      const t = (btn as HTMLElement).dataset['tab'] as Tab;
+      btn.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+      (btn as HTMLElement).classList.toggle('dp-tab-btn--active', t === tab);
+    });
+    this._renderBody();
+  },
+
+  // --- open / close ---------------------------------------------------------
+  _open(): void {
+    const el = this._el;
+    if (!el) return;
+    const refs = (el as any)._dpRefs as { backdrop: HTMLElement };
+    el.setAttribute('aria-hidden', 'false');
+    el.classList.add('detail-panel--open');
+    refs?.backdrop.classList.add('dp-backdrop--visible');
+    // фокус на панель
+    requestAnimationFrame(() => (el.querySelector('.dp-close') as HTMLElement)?.focus());
+  },
+
+  close(): void {
+    const el = this._el;
+    if (!el) return;
+    const refs = (el as any)._dpRefs as { backdrop: HTMLElement };
+    el.classList.remove('detail-panel--open');
+    el.setAttribute('aria-hidden', 'true');
+    refs?.backdrop.classList.remove('dp-backdrop--visible');
+    this._node = null;
+    emit('node:deselect', undefined);
+  },
+
+  destroy(): void {
+    if (this._escHandler) document.removeEventListener('keydown', this._escHandler);
+    this._el?.remove();
+  },
+};
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+function _techIcon(framework: string, language: string): HTMLElement {
+  const ICON_MAP: Record<string, string> = {
+    fastapi: 'fastapi', express: 'express', fastify: 'fastify',
+    nestjs: 'nestjs', nextjs: 'nextdotjs', gin: 'go',
+  };
+  const slug = ICON_MAP[framework] ?? (language === 'python' ? 'python' : language === 'go' ? 'go' : 'typescript');
+  const img = document.createElement('img');
+  img.src    = `https://cdn.simpleicons.org/${slug}/808080`;
+  img.width  = 28;
+  img.height = 28;
+  img.alt    = framework !== 'unknown' ? framework : language;
+  img.loading = 'lazy';
+  img.onerror = () => { img.style.display = 'none'; };
+  return img;
+}
+
+function _stackChips(node: ServiceNode): HTMLElement[] {
+  const chips: HTMLElement[] = [];
+  const add = (label: string, color?: string) => {
+    const c = document.createElement('span');
+    c.className = 'dp-chip';
+    if (color) c.style.setProperty('--chip-color', color);
+    c.textContent = label;
+    chips.push(c);
+  };
+  if (node.framework !== 'unknown') add(node.framework);
+  if (node.language  !== 'unknown') add(node.language);
+  const ntype = node.nodeType;
+  add(ntype, ntype === 'service' ? 'var(--color-primary)' : ntype === 'infrastructure' ? 'var(--color-gold)' : 'var(--color-text-muted)');
+  return chips;
 }
