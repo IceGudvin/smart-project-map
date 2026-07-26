@@ -10,14 +10,10 @@ export function setProjectDir(dir: string): void {
   _projectDir = dir
 }
 
-/** Совместимость: getCachedGraph берёт данные из store (единый кэш) */
 export function getCachedGraph(): GraphModel | null {
   return store.get()
 }
 
-/**
- * Run full scan: layer-1-parser → layer-2-graph → store.
- */
 export async function runScan(): Promise<{ graph: GraphModel; diff: GraphDiff | null }> {
   if (!_projectDir) throw new Error('[scanner] projectDir is not set')
 
@@ -35,7 +31,12 @@ export async function runScan(): Promise<{ graph: GraphModel; diff: GraphDiff | 
   console.log('[scanner] calling store.set(graph)...')
   const prevSize = store.get()?.nodes.length ?? 0
   const diff: GraphDiff | null = store.set(graph)
-  console.log(`[scanner] store.set done — prev nodes: ${prevSize} → new nodes: ${graph.nodes.length}, diff: ${diff ? `patch (${diff.added.length} added, ${diff.removed.length} removed, ${diff.updated.length} updated)` : 'null (first scan)'}`)
+  console.log(
+    `[scanner] store.set done — prev nodes: ${prevSize} → new nodes: ${graph.nodes.length}, ` +
+    (diff
+      ? `diff: patch (added: ${diff.addedNodes.length}, removed: ${diff.removedNodeIds.length}, updated: ${diff.updatedNodes.length})`
+      : 'diff: null (first scan)')
+  )
 
   console.log(
     `[scanner] runScan DONE in ${Date.now() - t0}ms — ` +
