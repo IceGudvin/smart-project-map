@@ -1,58 +1,73 @@
-## [2026-07-26] — Layer 4: Canvas + оверлеи — полная реализация (Issue #6)
+## [2026-07-26] — Layer 4: DetailPanel + вкладки — полная реализация (Issue #6)
 
 ### Добавлено
-- `Canvas/index.ts` — **полная реализация**:
-  - `mount(container)` — создаёт `.canvas-wrap` + `#cy`, монтирует все оверлеи
-  - `requestAnimationFrame` — дождём DOM, затем вызываем `cytoscapeInit()`
-  - `emit('cy:ready', cy)` после инициализации — AppShell сохраняет Core-инстанс
-  - `cy:fit` → `cy.fit(undefined, 60)`
-  - `graph:full` / `graph:update` → `syncGraph` + `statsBar.update`
-  - `theme:changed` → `updateTheme(cy, isDark)`
-  - `dataflow:toggle` → `toolbar.setDataflow(active)`
-  - `dataflow:next` → `toolbar.syncDataflowPath(idx)`
-  - `graph:refresh` → `runLayout(cy, 'TB')`
-  - CSS: `#cy` — dot-grid `radial-gradient` + `::after` радиальный фейд по краям
-- `StatsBar.ts` — `N сервисов · N связей · N роутов`; `tabular-nums`; glassmorphism pill; авто-плюрализация чисел
-- `CanvasToolbar.ts` — glassmorphism pill центр сверху; Pan (псевдо-активный), DataFlow + имя пути + ⋳ Next, Layout; `aria-pressed` + `toolbar-btn--active`
-- `ZoomControls.ts` — glassmorphism pill правый ниж; `+`/`−`/`⊡`; с `cy.animate` (200ms плавно)
-- `Legend.ts` — glassmorphism левый ниж; 3 чипса (закруглённый прямоугольник Service, круг Database, CSS-hexagon Cache)
+- `DetailPanel/index.ts` — **полная реализация**:
+  - Slide-in справа `translateX(100%) → 0`, `260ms cubic-bezier(0.16,1,0.3,1)`
+  - Glassmorphism: `var(--glass-bg/border/shadow/blur/saturate)`
+  - Шапка: `dp-icon-wrap` (Simple Icons CDN) + `dp-name` + `dp-stack` (чипсы фреймворк/язык/тип) + `dp-stats` (`N routes · N schemas · N deps`)
+  - Кнопка ×: `position: absolute; top/right: space-3`, hover → `--color-error` тинт
+  - 3 вкладки `aria-selected`, `aria-controls`, badge `(N)` в label
+  - Закрытие: `×`-кнопка + `Esc` + `emit('node:deselect')` + `dp-backdrop` click
+  - `on('node:select')` → ищет `ServiceNode` в `store.graph`, открывает панель
+  - `_render()` без полного пересоздания — обновляются только динамические части
+
+- `DetailPanel/RouteList.ts`:
+  - Цвет метода: GET=success, POST=primary, PUT=gold, PATCH=orange, DELETE=error
+  - `route-method` — `JetBrains Mono`, 700, min-width 52px
+  - `route-path` — моно, `word-break: break-all`
+  - `route-schema--in/out` — pill схем INPUT (синий) / OUTPUT (золотой)
+  - `route-src` — `basename:line`, кликабельно
+
+- `DetailPanel/SchemaBlock.ts`:
+  - `<details>` / `<summary>` — анимация chevron `rotate(180deg)`
+  - Таблица: Поле / Тип / зелёная/серая точка required
+  - Единственная схема — `open` сразу
+  - `schema-src` — `basename:line`
+
+- `DetailPanel/DepList.ts`:
+  - Каждый dep: иконка + `dep-name` + `dep-sub` (фреймворк/язык) + `dep-go` → `emit('node:select', depId)`
+  - навигация между зависимостями без закрытия панели
+
+- `DetailPanel/styles.ts` — инжекция CSS одним блоком, `injectDetailStyles()`
 
 ### Зафиксировано в репо
-- Roadmap Issue #6 — чекбоксы 🖼 Canvas + оверлеи отмечены ✅
-- Коммит: `a6d8ee5`
+- Roadmap Issue #6 — чекбоксы 📄 DetailPanel отмечены ✅
+- Коммит: `6aa5abd`
 
 ---
 
-## [2026-07-26] — Layer 4: Sidebar — полная реализация (Issue #6)
+## [2026-07-26] — Layer 4: Canvas + оверлеи (Issue #6)
 
 ### Добавлено
-- `Sidebar/index.ts`, `FilterBar.ts`, `ServiceItem.ts` — collapse, поиск, фильтр, секции, badges
-- `eventBus.ts` — `sidebar:filter`, `sidebar:collapsed`
+- `Canvas/index.ts`, `StatsBar.ts`, `CanvasToolbar.ts`, `ZoomControls.ts`, `Legend.ts`
 
 ### Зафиксировано в репо
-- Roadmap Issue #6 — чекбоксы 📋 Sidebar отмечены ✅
-- Коммит: `7cb543d`
+- Roadmap Issue #6 — чекбоксы 🖼 Canvas отмечены ✅
+- Коммит: `1e6f709`
 
 ---
 
-## [2026-07-26] — Layer 4: Header — полная реализация (Issue #6)
+## [2026-07-26] — Layer 4: Sidebar (Issue #6)
 
 ### Добавлено
-- `Header/index.ts` — SVG-лого, WS-индикатор (4 состояния), Refresh/Fit/Theme
-- `eventBus.ts` — `cy:fit`
+- `Sidebar/index.ts`, `FilterBar.ts`, `ServiceItem.ts`
 
 ### Зафиксировано в репо
-- Roadmap Issue #6 — чекбоксы 🔧 Header отмечены ✅
+- Roadmap Issue #6 — коммит: `7cb543d`
 
 ---
 
-## [2026-07-26] — Layer 4: AppShell — полная реализация (Issue #6)
-
-### Добавлено
-- `AppShell/index.ts` — layout 100dvh, wsClient, cy:ready, оркестрация
+## [2026-07-26] — Layer 4: Header (Issue #6)
 
 ### Зафиксировано в репо
-- Roadmap Issue #6 — чекбоксы 🏗 AppShell отмечены ✅
+- Roadmap Issue #6 — коммиты: `14166159`, `b747259`
+
+---
+
+## [2026-07-26] — Layer 4: AppShell (Issue #6)
+
+### Зафиксировано в репо
+- Roadmap Issue #6 — коммит: `1676593`
 
 ---
 
