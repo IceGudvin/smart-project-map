@@ -1,19 +1,36 @@
 import type { FastifyInstance } from 'fastify'
 import type { WebSocket } from '@fastify/websocket'
 import type { GraphModel, GraphDiff } from '@smart-map/shared'
+import { store } from '../store.js'
 
 const clients = new Set<WebSocket>()
+
+/**
+ * projectDir — текущий путь к проекту.
+ * Устанавливается из routes/server.ts после POST /server/start.
+ */
+let _projectDir: string | null = null
+
+export function setProjectDir(dir: string): void {
+  _projectDir = dir
+}
 
 export function registerWs(app: FastifyInstance): void {
   app.get('/ws', { websocket: true }, (socket) => {
     clients.add(socket)
     console.log(`[ws] client connected (total: ${clients.size})`)
 
-    // On connect — send current graph if available
-    const { getCachedGraph } = require('../scanner.js')
-    const cached: GraphModel | null = getCachedGraph()
+    const cached: GraphModel | null = store.get()
+
     if (cached) {
+      // Проект уже просканирован — отправляем граф
       socket.send(JSON.stringify({ type: 'graph:full', payload: cached }))
+    } else {
+      // Проекта нет — сообщаем UI чтобы показал ProjectPicker
+      socket.send(JSON.stringify({
+        type:    'server:status',
+        payload: { ready: false, projectDir: null },
+      }))
     }
 
     socket.on('close', () => {
