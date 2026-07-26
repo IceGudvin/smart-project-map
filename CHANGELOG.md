@@ -1,3 +1,20 @@
+## [2026-07-26] — Layer 4: стили — dot-grid + glassmorphism (Issue #6)
+
+### Добавлено
+- `src/styles/tokens.css`:
+  - `--font-body` — явный алиас на `'Satoshi', 'Inter', system-ui, sans-serif`
+  - Dot-grid переменные: `--dot-color`, `--dot-size` (1.5px), `--dot-spacing` (24px) — для обоих тем и system-fallback
+  - Glassmorphism-переменные: `--glass-bg`, `--glass-border`, `--glass-shadow` (двухслойная + inset top-glare), `--glass-blur` (12px), `--glass-saturate` — для light-темы (72% opacity), dark-темы (70%) и system-fallback
+- `src/styles/index.css`:
+  - `#cy` — dot-grid фон через `radial-gradient` + `background-size: var(--dot-spacing)`
+  - `.glass-panel` — утилитарный класс: `backdrop-filter: blur + saturate`, `background: var(--glass-bg)`, `border`, `box-shadow`, `@supports`-фоллбэк для браузеров без `backdrop-filter`
+
+### Зафиксировано в репо
+- Roadmap: Issue #6 (чекбоксы 🎨 Стили отмечены ✅)
+- Коммит: `e96896c`
+
+---
+
 ## [2026-07-26] — layer-4-ui: структура компонентов + дизайн-система
 
 ### Добавлено
