@@ -37,12 +37,11 @@ function extractHttpCalls(filePath: string, src: string): RawHttpCall[] {
   let match: RegExpExecArray | null;
   HTTP_CALL_RE.lastIndex = 0;
   while ((match = HTTP_CALL_RE.exec(src)) !== null) {
-    const rawMethod = match[1]?.toUpperCase();
+    // regex always captures group 1 — method is always known here
+    const method = match[1]!.toUpperCase() as RawHttpCall['method'];
     const url = match[2]!;
     const line = src.slice(0, match.index).split('\n').length;
-    const call: RawHttpCall = { url, file: filePath, line };
-    if (rawMethod) call.method = rawMethod as RawHttpCall['method'];
-    calls.push(call);
+    calls.push({ method, url, file: filePath, line });
   }
   return calls;
 }

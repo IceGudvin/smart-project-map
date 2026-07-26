@@ -90,20 +90,20 @@ function extractHttpCalls(project: Project): RawHttpCall[] {
           ? urlArg.getLiteralValue()
           : urlArg?.getText() ?? 'unknown';
 
-        const call: RawHttpCall = { url, file: file.getFilePath(), line: node.getStartLineNumber() };
-
+        // Default to GET; override if options.method is a string literal
+        let method: RawHttpCall['method'] = 'GET';
         const optionsArg = args[1];
         if (optionsArg && Node.isObjectLiteralExpression(optionsArg)) {
           const methodProp = optionsArg.getProperty('method');
           if (methodProp && Node.isPropertyAssignment(methodProp)) {
             const init = methodProp.getInitializer();
             if (init && Node.isStringLiteral(init)) {
-              call.method = init.getLiteralValue().toUpperCase() as RawHttpCall['method'];
+              method = init.getLiteralValue().toUpperCase() as RawHttpCall['method'];
             }
           }
         }
 
-        calls.push(call);
+        calls.push({ url, method, file: file.getFilePath(), line: node.getStartLineNumber() });
       }
 
       // axios.get/post/...
@@ -118,9 +118,12 @@ function extractHttpCalls(project: Project): RawHttpCall[] {
           const url = urlArg && Node.isStringLiteral(urlArg)
             ? urlArg.getLiteralValue()
             : urlArg?.getText() ?? 'unknown';
-          const call: RawHttpCall = { url, file: file.getFilePath(), line: node.getStartLineNumber() };
-          call.method = methodName as RawHttpCall['method'];
-          calls.push(call);
+          calls.push({
+            url,
+            method: methodName as RawHttpCall['method'],
+            file: file.getFilePath(),
+            line: node.getStartLineNumber(),
+          });
         }
       }
     });
