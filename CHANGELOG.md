@@ -1,33 +1,55 @@
+## [2026-07-26] — Layer 4: Sidebar — полная реализация (Issue #6)
+
+### Добавлено
+- `layer-4-ui/src/components/Sidebar/index.ts` — **полная реализация**:
+  - `mount(el)` / `update(graph)` / `setActive(nodeId|null)` / `destroy()` API
+  - CSS `injectSidebarStyles()` — одноразовая инжекция: обёртка, header, search, chips, sb-list, sb-section-label, .si, badges, dot, scrollbar
+  - **Collapse**: кнопка ⟨ — схлопывает до 48px, `transition: width 220ms`, иконка вращается 180° (класс `.collapsed`), `emit('sidebar:collapsed', bool)`
+  - **Поиск**: debounce 200ms, фильтр по `node.name` + `emit('sidebar:filter', Set<nodeId>)` — Canvas скрывает/показывает узлы cy
+  - **FilterBar чипы**: All/Service/Infra, комбинируются с поиском
+  - **Секции**: Application (фильтр `node.nodeType === 'service'`) и Infrastructure с разделителями; пустые секции авто-скрываются
+  - **Обновление**: `_applyDiff()` добавляет/удаляет элементы без полного пересоздания DOM
+  - Счётчик `(N)` рядом с заголовком, обновляется по `graph:full` / после фильтра
+
+- `layer-4-ui/src/components/Sidebar/FilterBar.ts` — **полная реализация**:
+  - 3 чипа: All / Service / Infra, `aria-pressed`, активный чип — `--color-primary` фон
+  - callback `onChange(FilterType)` — вызывает Sidebar._applyFilter()
+
+- `layer-4-ui/src/components/Sidebar/ServiceItem.ts` — **полная реализация**:
+  - Badge-мапинг для 20+ технологий: Next.js, FastAPI, Django, Express, Postgres, Redis, MinIO, RabbitMQ, Kafka и др.
+  - Мета-строка: `N routes · язык`
+  - Статус-точка: `--color-success` (зелёная)
+  - `setActive(bool)` + `scrollIntoView({ block: 'nearest', behavior: 'smooth' })`
+  - Клик → `emit('node:select', nodeId)` (не DOM CustomEvent)
+  - `escHtml()` — защита от XSS
+
+- `layer-4-ui/src/lib/eventBus.ts` — добавлены события:
+  - `sidebar:filter: Set<string>` — Sidebar эмитит, Canvas слушает
+  - `sidebar:collapsed: boolean` — Sidebar эмитит, AppShell может реагировать
+
+### Зафиксировано в репо
+- Roadmap Issue #6 — чекбоксы 📋 Sidebar отмечены ✅
+- Коммит: `7cb543d`
+
+---
+
 ## [2026-07-26] — Layer 4: Header — полная реализация (Issue #6)
 
 ### Добавлено
-- `layer-4-ui/src/components/Header/index.ts` — **полная реализация**:
-  - SVG-логотип: треугольный граф (3 круга + рёбра-линии), `currentColor`, работает на любом размере
-  - Путь проекта из `store.graph.meta?.projectPath` (или авто-заголовок по количеству сервисов + языку)
-  - WS-индикатор: пульсирующая точка + текст `live`/`offline`/`connecting`/`error`; цвета из `--color-success/gold/error/text-faint`; подписка на `ws:connected` / `ws:disconnected` / `ws:error`
-  - **Refresh** → `POST /graph/rebuild`, спиннер во время загрузки, обработка ошибок
-  - **Fit** → `emit('cy:fit')` → Canvas вызывает `cy.fit(60)`
-  - **Theme toggle**: moon/sun SVG-икона, `emit('theme:changed')`, авто-синх артефакта по `theme:changed`
-  - `updatedAt` таймстамп, обновляется по `graph:full` / `graph:update`
-  - `mount(el)` / `update()` / `destroy()` API, полная чистка подписок
-  - CSS инжектируется одинразово через `injectHeaderStyles()`
-- `layer-4-ui/src/lib/eventBus.ts` — добавлено событие `cy:fit: undefined` в `EventMap`
+- `layer-4-ui/src/components/Header/index.ts` — SVG-лого, WS-индикатор (4 состояния), Refresh/Fit/Theme
+- `layer-4-ui/src/lib/eventBus.ts` — `cy:fit` event
 
 ### Зафиксировано в репо
 - Roadmap Issue #6 — чекбоксы 🔧 Header отмечены ✅
-- Коммит: `14166159`, `b747259`
+- Коммиты: `14166159`, `b747259`
 
 ---
 
 ## [2026-07-26] — Layer 4: AppShell — полная реализация (Issue #6)
 
 ### Добавлено
-- `layer-4-ui/src/components/AppShell/index.ts` — **полная реализация**:
-  - `injectLayoutStyles()` — однократная инжекция CSS: `.app-shell` (flex column, 100dvh, overflow:hidden), `.app-header` (48px, glassmorphism), `.app-main` (flex row, overflow:hidden), `.app-sidebar` (260px fixed, collapse до 48px), `.app-canvas-wrap` (flex:1, position:relative), `.app-detail-panel` (absolute overlay), `.app-edge-tooltip` (fixed, pointer-events:none)
-  - `mount()`: строит DOM (header/aside/canvas-wrap), монтирует все дочерние компоненты, вызывает `connectWs()`, подписывается на все eventBus-события, вешает `Escape → node:deselect`
-  - `destroy()`: отписки + `disconnectWs()`
-  - `_bindEvents()` — полная оркестрация
-- `layer-4-ui/src/main.ts` — упрощён: только `new AppShell(appEl).mount()`, `window.__shell` для DevTools
+- `layer-4-ui/src/components/AppShell/index.ts` — layout 100dvh, wsClient connect, cy:ready, полная оркестрация событий
+- `layer-4-ui/src/main.ts` — упрощён
 
 ### Зафиксировано в репо
 - Roadmap Issue #6 — чекбоксы 🏗 AppShell отмечены ✅
@@ -35,35 +57,21 @@
 
 ---
 
-## [2026-07-26] — Layer 4: cytoscapeInit + nodeData — полная реализация (Issue #6)
-
-### Добавлено
-- `layer-4-ui/src/graph/cytoscapeInit.ts` — **полная реализация**
-- `layer-4-ui/src/graph/nodeData.ts` — **полная реализация**
+## [2026-07-26] — Layer 4: cytoscapeInit + nodeData (Issue #6)
 
 ### Зафиксировано в репо
-- Roadmap: Issue #6 (чекбоксы 🎯 Cytoscape + граф отмечены ✅)
-- Коммит: `e0d0d95`
+- Roadmap: Issue #6, коммит: `e0d0d95`
 
 ---
 
 ## [2026-07-26] — Layer 4: стили — dot-grid + glassmorphism (Issue #6)
 
-### Добавлено
-- `src/styles/tokens.css` — `--font-body`, dot-grid, glassmorphism переменные
-- `src/styles/index.css` — `#cy` dot-grid фон, `.glass-panel` утилитарный класс
-
 ### Зафиксировано в репо
-- Roadmap: Issue #6 (чекбоксы 🎨 Стили отмечены ✅)
-- Коммит: `e96896c`
+- Roadmap: Issue #6, коммит: `e96896c`
 
 ---
 
 ## [2026-07-26] — layer-4-ui: структура компонентов + дизайн-система
-
-### Добавлено
-- `layer-4-ui/` — полная файловая структура UI-слоя
-- Дизайн-система, структура компонентов, README
 
 ### Зафиксировано в репо
 - Roadmap: Issue #7
@@ -72,20 +80,12 @@
 
 ## [2026-07-26] — Layer 0: CLI + File Watcher
 
-### Добавлено
-- `layer-0-cli/` — полная реализация Layer 0
-- CLI, chokidar watcher, debounce 500ms, `--port` флаг
-
 ### Зафиксировано в репо
 - Roadmap: Issue #5
 
 ---
 
 ## [2026-07-26] — Layer 3: Fastify Server + WebSocket
-
-### Добавлено
-- `layer-3-server/` — полная реализация Layer 3
-- `GET /health`, `GET /graph`, `POST /graph/rebuild`, WebSocket `/ws`
 
 ### Зафиксировано в репо
 - Roadmap: Issue #4
@@ -94,18 +94,12 @@
 
 ## [2026-07-26] — Layer 2: Graph Builder
 
-### Добавлено
-- `layer-2-graph/` — полная реализация Layer 2
-
 ### Зафиксировано в репо
 - Roadmap: Issue #3
 
 ---
 
 ## [2026-07-26] — Старт реализации: shared/ + monorepo
-
-### Добавлено
-- npm workspaces monorepo, `shared/` типы, `layer-1-parser/`, `layer-2-graph/`
 
 ### Зафиксировано в репо
 - Roadmap: Issue #1, Issue #2

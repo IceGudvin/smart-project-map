@@ -1,8 +1,6 @@
 /**
  * eventBus.ts — Типизированная шина событий для layer-4-ui.
  *
- * Позволяет компонентам общаться без прямых зависимостей.
- *
  * Использование:
  *   on('node:select', (id) => { ... });
  *   emit('node:select', 'svc-backend');
@@ -10,11 +8,12 @@
  *   once('graph:refresh', () => { ... });
  *
  * События:
- *   UI-действия:  node:select, node:deselect,
- *                     dataflow:toggle, dataflow:next, graph:refresh
- *   Cytoscape:        cy:ready, cy:fit
+ *   UI-действия:     node:select, node:deselect,
+ *                        dataflow:toggle, dataflow:next, graph:refresh
+ *   Cytoscape:           cy:ready, cy:fit
+ *   Sidebar:             sidebar:filter, sidebar:collapsed
  *   WS-состояние:  ws:connected, ws:disconnected, ws:error
- *   Тема:             theme:changed
+ *   Тема:              theme:changed
  */
 
 import type { GraphModel, GraphDiff } from '../../../shared/src/graph.js'
@@ -46,9 +45,21 @@ export interface EventMap {
 
   // ---- Cytoscape ———————————————————
   /** Canvas эмитит после инициализации cy */
-  'cy:ready':            unknown  // cy instance (typed as unknown чтоб не тянуть cytoscape в bus)
+  'cy:ready':            unknown
   /** Header эмитит при нажатии «⊡ Fit» → Canvas вызывает cy.fit(60) */
   'cy:fit':              undefined
+
+  // ---- Sidebar —————————————————————
+  /**
+   * Sidebar эмитит после применения фильтра/поиска.
+   * payload — Set<nodeId> видимых узлов (Canvas скрывает/показывает узлы cy).
+   */
+  'sidebar:filter':      Set<string>
+  /**
+   * Sidebar эмитит при collapse/expand.
+   * payload: true = свёрнут, false = развёрнут.
+   */
+  'sidebar:collapsed':   boolean
 
   // ---- WS-состояние ————————————————
   'ws:connected':        undefined
@@ -68,7 +79,7 @@ const _listeners: { [K in EventKey]?: Set<Handler<K>> } = {}
 
 // ---------------------------------------------------------------- public API
 
-/** Подписаться на событие. Возвращает функцию-отписку для отписки. */
+/** Подписаться на событие. Возвращает функцию-отписку. */
 export function on<K extends EventKey>(event: K, handler: Handler<K>): () => void {
   if (!_listeners[event]) {
     (_listeners as any)[event] = new Set()
