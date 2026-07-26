@@ -1,0 +1,24 @@
+{
+  "name": "@smart-map/layer-0-cli",
+  "version": "0.1.0",
+  "description": "CLI entry point: starts server + watches project files for changes",
+  "type": "module",
+  "bin": {
+    "smart-map": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsup src/index.ts --format esm --outDir dist --dts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@smart-map/layer-3-server": "0.1.0",
+    "chokidar": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.19.4",
+    "typescript": "^5.9.3"
+  }
+}
