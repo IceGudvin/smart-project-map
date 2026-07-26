@@ -1,7 +1,6 @@
 /**
  * Legend — glassmorphism pill снизу слева: Сервис · БД · Кэш
  */
-import { injectOnce } from '../../lib/injectOnce.js'
 
 const CSS = `
 .legend {
@@ -48,13 +47,21 @@ const CSS = `
 `
 
 const ITEMS = [
-  { cls: 'legend-shape--service',  label: 'Сервис'   },
-  { cls: 'legend-shape--database', label: 'БД'       },
-  { cls: 'legend-shape--cache',    label: 'Кэш'      },
+  { cls: 'legend-shape--service',  label: 'Сервис' },
+  { cls: 'legend-shape--database', label: 'БД'      },
+  { cls: 'legend-shape--cache',    label: 'Кэш'     },
 ]
 
+function _injectCss(): void {
+  if (document.getElementById('legend-css')) return
+  const s = document.createElement('style')
+  s.id = 'legend-css'
+  s.textContent = CSS
+  document.head.appendChild(s)
+}
+
 export function mountLegend(container: HTMLElement): void {
-  injectOnce('legend-css', CSS)
+  _injectCss()
 
   const el = document.createElement('div')
   el.className = 'legend'
