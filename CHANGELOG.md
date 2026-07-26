@@ -1,3 +1,23 @@
+## [2026-07-26] — Layer 4: Интеграция layer-3-server — graphClient + updatedAt (Issue #6)
+
+### Добавлено
+- `layer-4-ui/src/lib/graphClient.ts` — HTTP-слой поверх WS:
+  - `initGraphClient()` — подписывается на `graph:refresh` (эмитится `wsClient` если `graph:full` не пришёл за 2 с) → `GET /graph` → `store.setGraph()` → `emit('graph:full')`
+  - `rebuildGraph()` — `POST /graph/rebuild` с индикатором загрузки и обработкой ошибок
+  - `fetchGraph()` — чистый `GET /graph` для ручного вызова (например при HMR)
+  - Все ошибки логируются с префиксом `[graphClient]`, не бросают наружу
+- `layer-4-ui/src/components/AppShell/index.ts` — при `mount()` вызывается `initGraphClient()` после `connectWs()`
+
+### Обновлено
+- `Header/index.ts` — `_doRefresh()` теперь вызывает `rebuildGraph()` из `graphClient` вместо прямого `fetch`; `_syncUpdatedAt()` форматирует `store.graph.updatedAt` в `ЧЧ:ММ:СС`
+- `store.ts` — `applyDiff()` обновляет `updatedAt: Date.now()` при каждом инкрементальном diff
+
+### Зафиксировано в репо
+- Roadmap Issue #6 — чекбоксы 🛠 Интеграция layer-3-server частично отмечены ✅
+- Файл: `layer-4-ui/src/lib/graphClient.ts` (новый)
+
+---
+
 ## [2026-07-26] — Layer 4: DataFlow режим — 3 пути + dash + dimmed (Issue #6)
 
 ### Добавлено
