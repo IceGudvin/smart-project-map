@@ -50,6 +50,7 @@ function buildNodeElement(node, isDark) {
         ? NODE_COLOR[node.nodeType]?.dark ?? NODE_COLOR.service.dark
         : NODE_COLOR[node.nodeType]?.light ?? NODE_COLOR.service.light;
     const slug    = getIconSlug(node);
+    // Если слаг есть — полный URL, иначе — пустая строка (селектор node[iconUrl=""] скроет настройки)
     const iconUrl = slug ? `${SIMPLE_ICONS_CDN}/${slug}/ffffff` : '';
     return {
         data: {
@@ -91,41 +92,44 @@ function buildStylesheet(isDark) {
         {
             selector: 'node',
             style: {
-                'shape':                'data(shape)',
-                'background-color':     'data(color)',
-                'background-opacity':   0.18,
-                'border-color':         'data(color)',
-                'border-width':         2,
-                'border-opacity':       0.85,
-                'label':                'data(label)',
-                'text-valign':          'center',
-                'text-halign':          'center',
-                'color':                textColor,
-                'font-size':            12,
-                'font-family':          'Inter',
-                'font-weight':          '500',
-                'width':                120,
-                'height':               44,
-                'padding':              '10px',
-                'background-image':     'data(iconUrl)',
-                'background-fit':       'contain',
-                'background-clip':      'none',
-                'background-width':     '55%',
-                'background-height':    '55%',
-                'background-position-x': '50%',
-                'background-position-y': '30%',
-                'text-margin-y':        10,
+                'shape':              'data(shape)',
+                'background-color':   'data(color)',
+                'background-opacity': 0.18,
+                'border-color':       'data(color)',
+                'border-width':       2,
+                'border-opacity':     0.85,
+                'label':              'data(label)',
+                'text-valign':        'center',
+                'text-halign':        'center',
+                'color':              textColor,
+                'font-size':          12,
+                'font-family':        'Inter',
+                'font-weight':        '500',
+                'width':              120,
+                'height':             44,
+                'padding':            '10px',
+                // Базовое значение none — переопределяется селектором node[iconUrl != ""] ниже
+                'background-image':   'none',
+                'background-fit':     'contain',
+                'background-clip':    'none',
+                'background-width':   '0%',
+                'background-height':  '0%',
+                'text-margin-y':      0,
                 'transition-property':  'background-opacity border-width border-opacity color',
                 'transition-duration':  '200ms',
                 'transition-timing-function': 'ease-out',
             },
         },
+        // Узлы С иконкой — применяем URL из data
         {
-            selector: 'node[iconUrl = ""]',
+            selector: 'node[iconUrl != ""]',
             style: {
-                'background-width':  '0%',
-                'background-height': '0%',
-                'text-margin-y':     0,
+                'background-image':      'data(iconUrl)',
+                'background-width':      '55%',
+                'background-height':     '55%',
+                'background-position-x': '50%',
+                'background-position-y': '30%',
+                'text-margin-y':         10,
             },
         },
         { selector: 'node.hover',       style: { 'background-opacity': 0.30, 'border-width': 3 } },
@@ -137,6 +141,7 @@ function buildStylesheet(isDark) {
                 'background-opacity': 0.05,
                 'border-opacity':     dimBorder,
                 'color':              dimText,
+                'background-image':   'none',
                 'background-width':   '0%',
                 'background-height':  '0%',
             },
@@ -231,16 +236,10 @@ export function highlightSelected(cy, nodeId) {
 
 // ================================================================ graph sync
 /**
- * Полная замена всех элементов cy из GraphModel.
- *
- * Предыдущая инкрементальная стратегия ломалась потому что:
- *   удаление узла каскадно удаляло его рёбра, но existingEdgeIds был уже
- *   записан до удаления → повторное cy.add() падало с «Can not create second element».
- *
- * Теперь: ремов всех → дедупликация → добавление → layout.
+ * Полная замена всех элементов cy.
+ * Ремов всех → дедупликация рёбер → добавление → layout.
  */
 export function syncGraph(cy, graph, isDark) {
-    // 1. Дедупликация рёбер по edgeKey
     const seenEdges = new Set();
     const uniqueEdges = graph.edges.filter((e) => {
         const k = edgeKey(e);
@@ -252,13 +251,11 @@ export function syncGraph(cy, graph, isDark) {
     const nodeEls = graph.nodes.map((n) => buildNodeElement(n, isDark));
     const edgeEls = uniqueEdges.map((e) => buildEdgeElement(e));
 
-    // 2. Атомарная замена
     cy.batch(() => {
         cy.elements().remove();
         cy.add([...nodeEls, ...edgeEls]);
     });
 
-    // 3. Перезапуск лейаута
     runLayout(cy);
 }
 
@@ -326,7 +323,6 @@ export function updateTheme(cy, isDark) {
 
 // ================================================================ init
 export function initCytoscape({ container, graph, isDark = true }) {
-    // Дедупликация рёбер перед первичной передачей в Cytoscape
     const seenEdges = new Set();
     const uniqueEdges = graph.edges.filter((e) => {
         const k = edgeKey(e);
